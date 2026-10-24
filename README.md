@@ -133,8 +133,8 @@ Omarchy's UI modules, and small stand-ins for Quickshell
 (`tests/qml/fakes`) with an in-memory file system. They check, among other
 things, that demo mode never writes the real file or starts a backup, that a
 damaged file is never overwritten, and the keyboard and notes in Week. CI
-runs all four on every push, in an Arch container against the current
-Omarchy shell from github.com/omacom/omarchy.
+runs all four on every push, in an Arch container against the shell of the
+current Omarchy release (pinned in `.github/workflows/ci.yml`).
 
 Before a release, also run the end-to-end test against your running shell:
 

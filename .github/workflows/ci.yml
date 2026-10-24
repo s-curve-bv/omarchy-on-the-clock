@@ -54,11 +54,13 @@ jobs:
     steps:
       - run: pacman -Syu --noconfirm --needed qt6-declarative git
       - uses: actions/checkout@v7
-      # Omarchy's shell modules (qs.Ui, qs.Commons) from Omarchy itself, so
-      # the plugin is checked against the current versions.
+      # Omarchy's shell modules (qs.Ui, qs.Commons) from the Omarchy release
+      # users run. Raise the tag when a new Omarchy release comes out; the
+      # development branch moves too fast for the Quickshell stand-ins.
       - uses: actions/checkout@v7
         with:
           repository: omacom/omarchy
+          ref: v4.0.6
           path: .omarchy
           sparse-checkout: shell
       # Quickshell is not packaged for this container; tests/qml/fakes
