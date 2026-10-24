@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -18,6 +19,9 @@ Column {
   readonly property var db: service ? service.db : Model.defaults()
   readonly property string currency: db.settings.currency
   readonly property int labelW: Style.space(150)
+  // Wide fields take what is left of the row after the label.
+  readonly property int wideW: width - labelW - Style.spacing.lg
+  readonly property int pickerW: Style.space(210)
 
   readonly property var customerOptions: db.customers.map(function(c) { return { value: c.id, label: c.name } })
   readonly property var rateOptions: db.rates.map(function(r) { return { value: r.id, label: r.name + " · " + Model.fmtMoney(r.amount, view.currency) } })
@@ -134,7 +138,7 @@ Column {
         spacing: Style.spacing.md
 
         Field {
-          width: Style.space(220)
+          width: Style.space(320)
           value: rrow.rate.name || ""
           placeholderText: "Name"
           onCommit: view.service.updateItem("rates", rrow.rate.id, { name: text })
@@ -182,7 +186,7 @@ Column {
         spacing: Style.spacing.md
 
         Field {
-          width: Style.space(220)
+          width: Style.space(320)
           value: crow.customer.name || ""
           placeholderText: "Name"
           opacity: crow.customer.archived ? 0.5 : 1
@@ -232,19 +236,19 @@ Column {
           spacing: Style.spacing.md
 
           Picker {
-            width: Style.space(190)
+            width: view.pickerW
             options: view.customerOptions
             value: prow.project.customerId || ""
             onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { customerId: v }) }
           }
           Field {
-            width: Style.space(230)
+            width: view.width - 2 * view.pickerW - 2 * Style.spacing.md
             value: prow.project.name || ""
             placeholderText: "Project name"
             onCommit: view.service.updateItem("projects", prow.project.id, { name: text })
           }
           Picker {
-            width: Style.space(190)
+            width: view.pickerW
             options: view.rateOptions
             value: prow.project.rateId || ""
             onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { rateId: v }) }
@@ -348,14 +352,14 @@ Column {
       spacing: Style.spacing.lg
       Label { text: "Calendar cache"; width: view.labelW }
       Field {
-        width: Style.space(420)
+        width: view.wideW
         value: view.db.settings.calendarCache
         onCommit: view.service.setSetting("calendarCache", text)
       }
     }
 
     Text {
-      text: "Data: " + (view.service ? view.service.dataPath : "")
+      text: "Data: " + (view.service ? view.service.dataPath.replace(Quickshell.env("HOME"), "~") : "")
       color: view.panel.faint
       font.family: view.panel.font
       font.pixelSize: Style.font.caption
@@ -390,9 +394,9 @@ Column {
       spacing: Style.spacing.lg
       Label { text: "Remote"; width: view.labelW }
       Field {
-        width: Style.space(420)
+        width: view.wideW
         value: view.db.settings.backupRemote || ""
-        placeholderText: "git@github.com:you/hours-data.git (optional, keep it private)"
+        placeholderText: "Optional, e.g. git@github.com:you/hours-data.git (keep it private)"
         onCommit: view.service.setSetting("backupRemote", text.trim())
       }
     }
@@ -402,16 +406,17 @@ Column {
       spacing: Style.spacing.lg
       Item { width: view.labelW; height: 1 }
       Button {
+        id: backupButton
         text: view.service && view.service.backupRunning ? "Backing up…" : "Back up now"
         fontFamily: view.panel.font
         onClicked: view.service.backupNow()
       }
       Label {
-        text: !view.service || !view.service.backupAt ? ""
-            : Qt.formatDateTime(new Date(view.service.backupAt), "HH:mm") + " · " + view.service.backupResult
+        text: !view.service || !view.service.backupAt ? "Not backed up since the shell started"
+            : "Last run " + Qt.formatDateTime(new Date(view.service.backupAt), "HH:mm") + ": " + view.service.backupResult
         color: view.service && view.service.backupFailed ? view.panel.urgent : view.panel.dim
-        elide: Text.ElideRight
-        width: Style.space(330)
+        elide: Text.ElideMiddle
+        width: view.wideW - backupButton.width - Style.spacing.lg
       }
     }
   }

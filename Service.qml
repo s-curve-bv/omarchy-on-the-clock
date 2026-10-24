@@ -242,6 +242,9 @@ Item {
       var out = (exitCode === 0 ? backupOut.text : backupErr.text || backupOut.text).trim().split("\n")
       root.backupResult = out[out.length - 1] || (exitCode === 0 ? "done" : "failed with code " + exitCode)
       if (root.backupFailed) console.warn("on-the-clock: backup failed: " + root.backupResult)
+      // Show the remote the folder already pushes to, so the setting matches.
+      var m = /^pushed to (.+)$/.exec(root.backupResult)
+      if (m && !root.db.settings.backupRemote) root.setSetting("backupRemote", m[1])
     }
   }
 
