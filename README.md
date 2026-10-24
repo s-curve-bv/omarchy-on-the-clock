@@ -121,14 +121,28 @@ The bar can show this month's income or hours instead of the project; set
 
 ## Development
 
-The calculations live in `Model.js` and the demo data in `Demo.js`; neither
-depends on QML:
+Four layers of tests:
 
-    node --test tests/test_model.js
-    bash tests/test_backup.sh
+    node --test tests/test_model.js   # calculations, notes, demo data (Model.js, Demo.js)
+    bash tests/test_backup.sh         # backup.sh commits real data, refuses demo data
+    tests/lint.sh                     # qmllint on all QML against Omarchy's real modules
+    tests/qml.sh                      # the real Service and Week view, headless
 
-CI runs these tests, Omarchy's own manifest validator and shellcheck on every
-push and pull request.
+The QML tests run the plugin's own Service.qml and WeekView.qml with
+Omarchy's UI modules, and small stand-ins for Quickshell
+(`tests/qml/fakes`) with an in-memory file system. They check, among other
+things, that demo mode never writes the real file or starts a backup, that a
+damaged file is never overwritten, and the keyboard and notes in Week. CI
+runs all four on every push, in an Arch container against the current
+Omarchy shell from github.com/omacom/omarchy.
+
+Before a release, also run the end-to-end test against your running shell:
+
+    tests/e2e.sh
+
+It drives the real panel in demo mode with IPC and key presses (needs
+`wtype`), checks the result with `omarchy-shell ontheclock state`, and
+verifies at the end that your own data and its backup did not change.
 
 To retake the screenshots after a UI change:
 

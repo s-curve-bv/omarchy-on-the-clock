@@ -44,4 +44,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck backup.sh demo/screenshots.sh tests/test_backup.sh
+      - run: shellcheck backup.sh demo/screenshots.sh tests/*.sh
+
+  qml:
+    name: QML lint and tests
+    runs-on: ubuntu-latest
+    # Arch, like Omarchy, for a current Qt with qmllint and qmltestrunner.
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed qt6-declarative git
+      - uses: actions/checkout@v7
+      # Omarchy's shell modules (qs.Ui, qs.Commons) from Omarchy itself, so
+      # the plugin is checked against the current versions.
+      - uses: actions/checkout@v7
+        with:
+          repository: omacom/omarchy
+          path: .omarchy
+          sparse-checkout: shell
+      # Quickshell is not packaged for this container; tests/qml/fakes
+      # stands in for it.
+      - run: tests/lint.sh .omarchy/shell tests/qml/fakes
+      - run: tests/qml.sh .omarchy/shell
