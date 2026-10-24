@@ -38,8 +38,20 @@ Panel {
   function close() { root.controller.hide() }
   function toggle() { root.opened ? root.close() : root.open() }
 
+  function focusGrid() { keys.forceActiveFocus() }
+
+  // A control in the tab you leave (a dropdown you just used) would keep
+  // keyboard focus while hidden and catch Enter and the arrows; switching
+  // tabs hands the keys back to the panel.
+  onTabChanged: keys.forceActiveFocus()
+
   // Opening selects the running or last-used project in Week.
-  onOpenedChanged: if (opened) { weekView.resetCursor(); keys.forceActiveFocus() }
+  onOpenedChanged: {
+    if (!opened) return
+    weekView.resetCursor()
+    if (root.service && root.service.notePrompt) notePrompt.focusInput()
+    else keys.forceActiveFocus()
+  }
 
   function switchPanel(direction) {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
@@ -67,8 +79,16 @@ Panel {
       // + and - add or remove 0:15 in that cell (with shift 1:00), space
       // starts or stops the project's timer.
       Keys.onPressed: function(event) {
-        if (root.tab !== "week") return
         var k = event.key
+        // w, o, c and a switch tabs anywhere outside a text field.
+        var tabs = {}
+        tabs[Qt.Key_W] = "week"; tabs[Qt.Key_O] = "overview"; tabs[Qt.Key_C] = "calendar"; tabs[Qt.Key_A] = "admin"
+        if (tabs[k] && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+          root.tab = tabs[k]
+          event.accepted = true
+          return
+        }
+        if (root.tab !== "week") return
         var hour = (event.modifiers & Qt.ShiftModifier) && k !== Qt.Key_Plus
         if (k === Qt.Key_Up || k === Qt.Key_K) weekView.moveCursor(-1)
         else if (k === Qt.Key_Down || k === Qt.Key_J) weekView.moveCursor(1)
@@ -233,11 +253,12 @@ Panel {
           ButtonGroup {
             fontFamily: root.font
             value: root.tab
+            // The first letter is the shortcut; U+0332 underlines it in plain text.
             options: [
-              { value: "week", label: "Week" + (root.service && root.service.suggestions.length ? " (" + root.service.suggestions.length + ")" : "") },
-              { value: "overview", label: "Overview" },
-              { value: "calendar", label: "Calendar" },
-              { value: "admin", label: "Admin" }
+              { value: "week", label: "W\u0332eek" + (root.service && root.service.suggestions.length ? " (" + root.service.suggestions.length + ")" : ""), tooltip: "Shortcut: w" },
+              { value: "overview", label: "O\u0332verview", tooltip: "Shortcut: o" },
+              { value: "calendar", label: "C\u0332alendar", tooltip: "Shortcut: c" },
+              { value: "admin", label: "A\u0332dmin", tooltip: "Shortcut: a" }
             ]
             onChanged: function(v) { root.tab = v }
           }
