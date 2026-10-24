@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -228,6 +229,7 @@ Column {
       Repeater {
         model: view.monthIncomes
         delegate: Item {
+          id: monthBar
           required property var modelData
           required property int index
           x: index * chart.colW
@@ -239,16 +241,16 @@ Column {
             anchors.bottom: label.top
             anchors.bottomMargin: Style.spacing.xs
             width: chart.colW * 0.55
-            height: Math.max(modelData.income > 0 ? 2 : 0, chart.plotH * modelData.income / view.chartMax)
+            height: Math.max(monthBar.modelData.income > 0 ? 2 : 0, chart.plotH * monthBar.modelData.income / view.chartMax)
             radius: Style.cornerRadius
-            color: modelData.month === view.month ? view.panel.accent : Qt.rgba(view.panel.fg.r, view.panel.fg.g, view.panel.fg.b, monthMouse.containsMouse ? 0.5 : 0.3)
+            color: monthBar.modelData.month === view.month ? view.panel.accent : Qt.rgba(view.panel.fg.r, view.panel.fg.g, view.panel.fg.b, monthMouse.containsMouse ? 0.5 : 0.3)
           }
           Text {
             id: label
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDate(Model.parseKey(modelData.month + "-01"), "MMM")
-            color: modelData.month === view.month ? view.panel.accent : view.panel.dim
+            text: Qt.formatDate(Model.parseKey(monthBar.modelData.month + "-01"), "MMM")
+            color: monthBar.modelData.month === view.month ? view.panel.accent : view.panel.dim
             font.family: view.panel.font
             font.pixelSize: Style.font.caption
           }
@@ -257,7 +259,7 @@ Column {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: view.month = modelData.month
+            onClicked: view.month = monthBar.modelData.month
           }
         }
       }

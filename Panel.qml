@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import qs.Commons
@@ -112,11 +113,11 @@ Panel {
           if (wheel.pixelDelta.y !== 0) {
             wheelGlide.stop()
             scroller.cancelFlick()
-            var now = Date.now()
-            var dt = Math.max(1, now - scroller.lastWheelAt)
+            const now = Date.now()
+            const dt = Math.max(1, now - scroller.lastWheelAt)
             scroller.lastWheelAt = now
             scroller.contentY = scroller.clampY(scroller.contentY - wheel.pixelDelta.y)
-            var v = -wheel.pixelDelta.y * 1000 / dt
+            const v = -wheel.pixelDelta.y * 1000 / dt
             scroller.wheelVelocity = dt > 100 ? v : 0.6 * v + 0.4 * scroller.wheelVelocity
             touchpadRelease.restart()
           } else if (wheel.angleDelta.y === 0 && wheel.pixelDelta.y === 0) {
@@ -128,7 +129,7 @@ Panel {
             }
           } else if (wheel.angleDelta.y !== 0) {
             scroller.cancelFlick()
-            var from = wheelGlide.running ? scroller.wheelTarget : scroller.contentY
+            const from = wheelGlide.running ? scroller.wheelTarget : scroller.contentY
             scroller.wheelTarget = scroller.clampY(from - wheel.angleDelta.y / 120 * Style.space(110))
             wheelGlide.stop()
             wheelGlide.to = scroller.wheelTarget

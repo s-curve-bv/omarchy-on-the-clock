@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -34,13 +35,13 @@ BarWidget {
     if (!s || !s.loaded) return "On the Clock"
     var prefix = (s.demo ? "DEMO " : "") + (s.pendingIdle ? "  " : "")
     if (s.timer) {
-      var p = s.timerProject
+      const p = s.timerProject
       return prefix + (p ? p.name : "?") + " " + Model.fmtHours(s.timerMinutes)
     }
     if (barShows === "hours") return prefix + Model.fmtHours(s.monthTotals.minutes)
     if (barShows === "income") {
-      var cur = s.db.settings.currency
-      var target = s.db.targets.month
+      const cur = s.db.settings.currency
+      const target = s.db.targets.month
       return prefix + Model.fmtMoneyShort(s.monthTotals.income, cur) + (target > 0 ? "/" + Model.fmtMoneyShort(target, cur).replace(/^\D+/, "") : "")
     }
     if (barShows === "icon") return prefix
