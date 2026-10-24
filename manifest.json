@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "s-curve.on-the-clock",
+  "name": "On the Clock",
+  "version": "0.1.0",
+  "author": "S-Curve",
+  "license": "MIT",
+  "description": "Track billable hours from the bar: customers, rates, projects with budgets, a quarter-hour week grid, a timer with idle check, monthly and yearly income targets, and recurring calendar meetings to confirm",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "On the Clock",
+    "description": "Running timer or this month's income against target; opens the time tracking panel",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barShows": "income"
+    },
+    "schema": [
+      {
+        "key": "barShows",
+        "type": "enum",
+        "label": "Bar shows when no timer runs",
+        "options": ["income", "hours", "icon"],
+        "defaultValue": "income"
+      }
+    ]
+  }
+}
