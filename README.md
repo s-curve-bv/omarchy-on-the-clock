@@ -8,6 +8,33 @@ with a few customers, a handful of projects and a couple of hourly rates.
 
 ![On the Clock](preview.png)
 
+## Features
+
+- **Timer in the bar.** ▶ starts the project you worked on last; ■ stops it
+  and books the time, rounded to the nearest 15 minutes, on the day it
+  started.
+- **What did you do?** After stopping, the panel asks. Calendar meetings
+  from that time are offered with one click; anything you type is saved as
+  a note.
+- **Idle check.** Away while the timer runs? You choose to keep or discard
+  that time.
+- **Week grid.** Projects × days in 15-minute steps, by mouse or keyboard,
+  with notes (one line per thing done) under the grid.
+- **Calendar meetings.** Link recurring meetings to a project; each ended
+  occurrence waits in Week to be booked or skipped, because a meeting
+  doesn't always happen.
+- **Income and targets.** Monthly and yearly income targets, a marker for
+  where you should be today, and a plain forecast: where your pace ends up
+  and what it takes per work day to make it.
+- **Customers, projects and rates.** Per project an hourly rate, billable or
+  internal, and an optional budget in hours or money. Finished work can be
+  archived without losing its history.
+- **Keyboard first.** w/o/c/a for the tabs, arrows or hjkl in the grid, + and
+  − for hours, n for a note, space for the timer.
+- **Your data in one JSON file**, with optional git history pushed to a
+  private repository of your choice.
+- **Demo mode** to try everything on fictional data without touching yours.
+
 ## Install
 
     omarchy plugin add https://github.com/s-curve-bv/omarchy-on-the-clock.git --enable
