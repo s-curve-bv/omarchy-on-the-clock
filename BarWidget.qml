@@ -25,24 +25,27 @@ BarWidget {
     onTriggered: root.resolveService()
   }
 
-  readonly property string barShows: setting("barShows", "income")
+  readonly property string barShows: setting("barShows", "project")
 
+  // Text next to the play/stop button: the running project and its time,
+  // or the project the button would start, or a month figure (setting).
   readonly property string label: {
     var s = service
-    if (!s || !s.loaded) return "󱎫"
-    var warn = s.pendingIdle ? "  " : ""
+    if (!s || !s.loaded) return "On the Clock"
+    var prefix = (s.demo ? "DEMO " : "") + (s.pendingIdle ? "  " : "")
     if (s.timer) {
       var p = s.timerProject
-      return warn + "󱎫 " + (p ? p.name : "?") + " " + Model.fmtHours(s.timerMinutes)
+      return prefix + (p ? p.name : "?") + " " + Model.fmtHours(s.timerMinutes)
     }
-    if (s.suggestions.length > 0 && barShows !== "icon") return "󰃰 " + s.suggestions.length
-    if (barShows === "hours") return "󱎫 " + Model.fmtHours(s.monthTotals.minutes)
+    if (barShows === "hours") return prefix + Model.fmtHours(s.monthTotals.minutes)
     if (barShows === "income") {
       var cur = s.db.settings.currency
       var target = s.db.targets.month
-      return "󱎫 " + Model.fmtMoneyShort(s.monthTotals.income, cur) + (target > 0 ? "/" + Model.fmtMoneyShort(target, cur).replace(/^\D+/, "") : "")
+      return prefix + Model.fmtMoneyShort(s.monthTotals.income, cur) + (target > 0 ? "/" + Model.fmtMoneyShort(target, cur).replace(/^\D+/, "") : "")
     }
-    return "󱎫"
+    if (barShows === "icon") return prefix
+    var sel = s.selectedProject
+    return prefix + (sel ? sel.name : "On the Clock")
   }
 
   function injectPanel() {
@@ -67,7 +70,7 @@ BarWidget {
   function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
   function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
 
-  implicitWidth: button.implicitWidth
+  implicitWidth: root.vertical ? button.implicitWidth : row.implicitWidth
   implicitHeight: button.implicitHeight
 
   Loader {
@@ -81,14 +84,50 @@ BarWidget {
     }
   }
 
+  // Play/stop for the project shown, then the label, which opens the panel.
+  // Right-click on either also starts or stops. Vertical bars get a single
+  // icon that opens the panel.
+  Row {
+    id: row
+    visible: !root.vertical
+    height: parent.height
+
+    WidgetButton {
+      id: playButton
+      height: parent.height
+      bar: root.bar
+      horizontalMargin: 4
+      text: root.service && root.service.timer ? "󰓛" : "󰐊"
+      // The bar's active colour is the urgent red, which reads as an error.
+      useActiveColor: false
+      tooltipText: !root.service ? ""
+        : root.service.timer ? "Stop and book " + root.service.projectLabel(root.service.timerProject)
+        : root.service.selectedProject ? "Start " + root.service.projectLabel(root.service.selectedProject)
+        : "Add a project in the panel first"
+      onPressed: function(b) { if (root.service) root.service.toggleTimer("") }
+    }
+
+    WidgetButton {
+      id: button
+      height: parent.height
+      bar: root.bar
+      horizontalMargin: 4
+      text: root.label
+      useActiveColor: false
+      tooltipText: "Open On the Clock"
+      onPressed: function(b) {
+        if (b === Qt.RightButton) { if (root.service) root.service.toggleTimer("") }
+        else if (panelLoader.item) panelLoader.item.toggle()
+      }
+    }
+  }
+
   WidgetButton {
-    id: button
+    visible: root.vertical
     anchors.fill: parent
     bar: root.bar
-    text: root.vertical ? "󱎫" : root.label
-    active: !!(root.service && root.service.timer)
-    tooltipText: root.service && root.service.timer ? "Left: panel · Right: stop timer" : "Left: panel · Right: restart last timer"
-
+    text: root.service && root.service.timer ? "󰓛" : "󱎫"
+    useActiveColor: false
     onPressed: function(b) {
       if (b === Qt.RightButton) { if (root.service) root.service.toggleTimer("") }
       else if (panelLoader.item) panelLoader.item.toggle()

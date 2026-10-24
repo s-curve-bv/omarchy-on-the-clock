@@ -16,20 +16,20 @@
   },
   "barWidget": {
     "displayName": "On the Clock",
-    "description": "Running timer or this month's income against target; opens the time tracking panel",
+    "description": "Play/stop button for the current project and its running time; click the name to open the time tracking panel",
     "category": "Productivity",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "barShows": "income"
+      "barShows": "project"
     },
     "schema": [
       {
         "key": "barShows",
         "type": "enum",
         "label": "Bar shows when no timer runs",
-        "options": ["income", "hours", "icon"],
-        "defaultValue": "income"
+        "options": ["project", "income", "hours", "icon"],
+        "defaultValue": "project"
       }
     ]
   }

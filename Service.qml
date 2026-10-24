@@ -41,6 +41,18 @@ Item {
   readonly property real timerMinutes: timer ? Model.timerElapsedMinutes(timer, now) : 0
   readonly property var pendingIdle: timer && timer.pendingIdle ? timer.pendingIdle : null
 
+  // The project the bar offers to start: the last one used, or the first.
+  readonly property var activeProjects: db.projects
+    .filter(function(p) {
+      var c = Model.byId(db.customers, p.customerId)
+      return !p.archived && !(c && c.archived)
+    })
+    .sort(function(a, b) { return root.projectLabel(a).localeCompare(root.projectLabel(b)) })
+  readonly property var selectedProject: {
+    var p = Model.byId(db.projects, db.settings.lastProjectId)
+    return p && activeProjects.indexOf(p) !== -1 ? p : (activeProjects[0] || null)
+  }
+
   readonly property var monthTotals: {
     var r = Model.monthRange(Model.monthKey(today))
     return Model.totals(db, r[0], r[1])
@@ -123,7 +135,7 @@ Item {
 
   function toggleTimer(projectId) {
     if (timer && (!projectId || timer.projectId === projectId)) stopTimer()
-    else if (projectId || db.settings.lastProjectId) startTimer(projectId || db.settings.lastProjectId)
+    else if (projectId || selectedProject) startTimer(projectId || selectedProject.id)
   }
 
   function keepIdle() {
