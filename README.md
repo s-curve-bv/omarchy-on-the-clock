@@ -1,5 +1,8 @@
 # On the Clock
 
+[![CI](https://github.com/s-curve-bv/omarchy-on-the-clock/actions/workflows/ci.yml/badge.svg)](https://github.com/s-curve-bv/omarchy-on-the-clock/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/s-curve-bv/omarchy-on-the-clock)](LICENSE)
+
 Track billable hours and income from the Omarchy bar. Built for freelancers
 with a few customers, a handful of projects and a couple of hourly rates.
 
@@ -28,6 +31,10 @@ restarts the last project.
   billable or internal, optional budget in hours or money), settings and
   backup.
 
+| Week | Calendar | Admin |
+|---|---|---|
+| ![Week](screenshots/week.png) | ![Calendar](screenshots/calendar.png) | ![Admin](screenshots/admin.png) |
+
 While a timer runs, no keyboard or mouse input for 10 minutes (configurable)
 triggers a notification and a prompt to keep or discard that idle time.
 
@@ -55,7 +62,8 @@ repository: a few minutes after you change something, the plugin commits
 `hours.json`. Add a remote (a **private** repository, since this is your
 income) and every commit is pushed as well. Pushing uses your normal git
 credentials, so an SSH key or `gh auth setup-git` needs to be in place.
-An existing `origin` in the folder is used when the remote field is empty.
+If the folder already has an `origin`, the plugin uses it and fills in the
+remote field after the first push.
 
 ## Commands
 
@@ -73,6 +81,18 @@ For keybindings or scripts:
 The calculations live in `Model.js`, which has no QML dependencies:
 
     node --test tests/test_model.js
+
+CI runs these tests, Omarchy's own manifest validator and shellcheck on every
+push and pull request.
+
+The screenshots use fictional data from `demo/make-demo.js`. To retake them
+after a UI change:
+
+    demo/screenshots.sh
+
+It swaps the demo data in for your own `hours.json`, restarts the shell a few
+times to open each tab, crops the panel out of each capture and puts your data
+back, also if it is interrupted.
 
 ## License
 

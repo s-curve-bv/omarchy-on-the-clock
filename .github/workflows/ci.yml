@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Model tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node --test tests/test_model.js
+      - name: Demo data still generates
+        run: node demo/make-demo.js
+
+  validate:
+    name: Omarchy manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The same check `omarchy plugin validate` runs, fetched from Omarchy
+      # itself so it stays current.
+      - name: Fetch omarchy-plugin-validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/omacom/omarchy/contents/bin/omarchy-plugin-validate \
+            -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/validate"
+      - run: bash "$RUNNER_TEMP/validate" .
+
+  shellcheck:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck backup.sh demo/screenshots.sh
