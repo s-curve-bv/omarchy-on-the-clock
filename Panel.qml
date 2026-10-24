@@ -38,6 +38,9 @@ Panel {
   function close() { root.controller.hide() }
   function toggle() { root.opened ? root.close() : root.open() }
 
+  // Opening selects the running or last-used project in Week.
+  onOpenedChanged: if (opened) { weekView.resetCursor(); keys.forceActiveFocus() }
+
   function switchPanel(direction) {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
       return root.bar.switchPanelFrom(root.barIdentity, direction)
@@ -59,6 +62,24 @@ Panel {
       anchors.fill: parent
       focus: true
       Keys.onEscapePressed: root.close()
+
+      // Week: up/down (k/j) pick the project, left/right (h/l) the day,
+      // + and - add or remove 0:15 in that cell (with shift 1:00), space
+      // starts or stops the project's timer.
+      Keys.onPressed: function(event) {
+        if (root.tab !== "week") return
+        var k = event.key
+        var hour = (event.modifiers & Qt.ShiftModifier) && k !== Qt.Key_Plus
+        if (k === Qt.Key_Up || k === Qt.Key_K) weekView.moveCursor(-1)
+        else if (k === Qt.Key_Down || k === Qt.Key_J) weekView.moveCursor(1)
+        else if (k === Qt.Key_Left || k === Qt.Key_H) weekView.moveDay(-1)
+        else if (k === Qt.Key_Right || k === Qt.Key_L) weekView.moveDay(1)
+        else if (k === Qt.Key_Plus || k === Qt.Key_Equal) weekView.addToCursor(hour ? 60 : 15)
+        else if (k === Qt.Key_Minus || k === Qt.Key_Underscore) weekView.addToCursor(hour || k === Qt.Key_Underscore ? -60 : -15)
+        else if (k === Qt.Key_Space) weekView.toggleCursor()
+        else return
+        event.accepted = true
+      }
 
       // Click on empty space takes focus out of a text field, which saves it.
       MouseArea {
@@ -142,49 +163,83 @@ Panel {
           width: parent.width
           spacing: Style.spacing.xl
 
-          // ---- Header: tabs + timer ----
-          Item {
+          // ---- Running timer ----
+          // Above the tabs so it shows on every tab: what runs, for how long,
+          // and what stopping now would book on which day.
+          Rectangle {
+            visible: !!(root.service && root.service.timer)
             width: parent.width
-            height: Style.spacing.controlHeight
-
-            ButtonGroup {
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              fontFamily: root.font
-              value: root.tab
-              options: [
-                { value: "week", label: "Week" + (root.service && root.service.suggestions.length ? " (" + root.service.suggestions.length + ")" : "") },
-                { value: "overview", label: "Overview" },
-                { value: "calendar", label: "Calendar" },
-                { value: "admin", label: "Admin" }
-              ]
-              onChanged: function(v) { root.tab = v }
-            }
+            height: Style.spacing.controlHeight + Style.spacing.md * 2
+            radius: Style.cornerRadius
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.15)
 
             Row {
-              anchors.right: parent.right
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.lg
+              anchors.right: stopButton.left
+              anchors.rightMargin: Style.spacing.lg
               anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.spacing.md
-              visible: !!(root.service && root.service.timer)
+              spacing: Style.spacing.lg
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.service && root.service.timer
-                      ? "󱎫 " + root.service.projectLabel(root.service.timerProject) + "  " + Model.fmtHours(root.service.timerMinutes)
-                        + "  → " + Model.fmtHours(Model.roundQuarter(root.service.timerMinutes))
-                      : ""
-                textFormat: Text.PlainText
-                color: root.accent
+                text: root.service && root.service.timer ? "󱎫 " + Model.fmtHours(root.service.timerMinutes) : ""
+                color: root.fg
                 font.family: root.font
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.title
+                font.bold: true
               }
-              Button {
-                text: "Stop"
-                bordered: true
-                fontFamily: root.font
-                onClicked: root.service.stopTimer()
+              Column {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - parent.children[0].width - parent.spacing
+
+                Text {
+                  width: parent.width
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                  text: root.service ? root.service.projectLabel(root.service.timerProject) : ""
+                  color: root.fg
+                  font.family: root.font
+                  font.pixelSize: Style.font.body
+                }
+                Text {
+                  width: parent.width
+                  elide: Text.ElideRight
+                  text: !(root.service && root.service.timer) ? ""
+                    : "since " + Qt.formatTime(new Date(root.service.timer.startedAt), "HH:mm") + " · stopping now books "
+                      + Model.fmtHours(Model.roundQuarter(root.service.timerMinutes)) + " on "
+                      + Qt.formatDate(new Date(root.service.timer.startedAt), "ddd d MMM")
+                  color: root.dim
+                  font.family: root.font
+                  font.pixelSize: Style.font.bodySmall
+                }
               }
             }
+
+            Button {
+              id: stopButton
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: "󰓛"
+              text: "Stop and book"
+              bordered: true
+              fontFamily: root.font
+              onClicked: root.service.stopTimer()
+            }
+          }
+
+          // ---- Tabs ----
+          ButtonGroup {
+            fontFamily: root.font
+            value: root.tab
+            options: [
+              { value: "week", label: "Week" + (root.service && root.service.suggestions.length ? " (" + root.service.suggestions.length + ")" : "") },
+              { value: "overview", label: "Overview" },
+              { value: "calendar", label: "Calendar" },
+              { value: "admin", label: "Admin" }
+            ]
+            onChanged: function(v) { root.tab = v }
           }
 
           // ---- Banners ----
@@ -256,6 +311,7 @@ Panel {
 
           // ---- Views ----
           WeekView {
+            id: weekView
             visible: root.tab === "week"
             width: parent.width
             service: root.service

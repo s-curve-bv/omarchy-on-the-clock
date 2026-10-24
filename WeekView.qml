@@ -17,6 +17,9 @@ Column {
   property string weekStart: Model.weekStart(today)
   readonly property var days: [0, 1, 2, 3, 4, 5, 6].map(function(i) { return Model.addDays(view.weekStart, i) })
   readonly property string currency: db.settings.currency
+  // The timer always books on the day it started, so it is only offered
+  // in the current week.
+  readonly property bool isCurrentWeek: weekStart === Model.weekStart(today)
 
   readonly property int cellW: Style.space(52)
   readonly property int totalW: Style.space(60)
@@ -43,6 +46,45 @@ Column {
   }
 
   readonly property var weekTotals: Model.totals(db, days[0], days[6])
+
+  // Keyboard cursor: a project row and a day. Space starts or stops the
+  // project's timer, + and - change the hours in that cell.
+  property string cursorId: ""
+  property string cursorDay: today
+  readonly property var selectable: rows
+    .filter(function(r) { return r.project && view.service && view.service.activeProjects.indexOf(r.project) !== -1 })
+    .map(function(r) { return r.project.id })
+
+  function resetCursor() {
+    weekStart = Model.weekStart(today)
+    cursorDay = today
+    var s = service
+    var id = s && s.timer ? s.timer.projectId : (s && s.selectedProject ? s.selectedProject.id : "")
+    cursorId = selectable.indexOf(id) !== -1 ? id : (selectable[0] || "")
+  }
+
+  function moveCursor(step) {
+    var i = selectable.indexOf(cursorId)
+    if (i === -1) { resetCursor(); return }
+    cursorId = selectable[Math.max(0, Math.min(selectable.length - 1, i + step))]
+  }
+
+  // In another week, space first brings you back to this one.
+  function toggleCursor() {
+    if (!isCurrentWeek) { weekStart = Model.weekStart(today); return }
+    if (cursorId && service) service.toggleTimer(cursorId)
+  }
+
+  // Moving past Monday or Sunday continues in the next or previous week.
+  function moveDay(step) {
+    cursorDay = Model.addDays(days.indexOf(cursorDay) === -1 ? days[0] : cursorDay, step)
+    weekStart = Model.weekStart(cursorDay)
+  }
+
+  function addToCursor(minutes) {
+    if (!cursorId || !service || days.indexOf(cursorDay) === -1) return
+    service.addMinutes(cursorDay, cursorId, minutes)
+  }
 
   function dayTotal(key) {
     var day = db.entries[key]
@@ -85,7 +127,7 @@ Column {
       Button { text: "›"; fontFamily: view.panel.font; onClicked: view.weekStart = Model.addDays(view.weekStart, 7) }
       Button {
         visible: view.weekStart !== Model.weekStart(view.today)
-        text: "This week"
+        text: "Back to this week"
         fontFamily: view.panel.font
         onClicked: view.weekStart = Model.weekStart(view.today)
       }
@@ -116,23 +158,50 @@ Column {
     Repeater {
       model: view.service ? view.service.suggestions : []
 
+      // Date and time in a fixed column, then the meeting, with the project
+      // it books on underneath.
       delegate: Item {
+        id: srow
         required property var modelData
         width: view.width
-        height: Style.spacing.controlHeight + Style.spacing.xs
+        height: Math.max(meeting.implicitHeight, Style.spacing.controlHeight) + Style.spacing.sm
 
         Text {
-          anchors.left: parent.left
-          anchors.right: actions.left
-          anchors.rightMargin: Style.spacing.lg
-          anchors.verticalCenter: parent.verticalCenter
-          elide: Text.ElideRight
-          textFormat: Text.PlainText
-          text: Qt.formatDateTime(new Date(modelData.start), "ddd d MMM HH:mm") + "  " + modelData.title
-                + "  →  " + view.service.projectLabel(Model.byId(view.db.projects, modelData.projectId))
+          id: when
+          anchors.top: meeting.top
+          width: Style.space(170)
+          text: Qt.formatDateTime(new Date(srow.modelData.start), "ddd d MMM  HH:mm")
           color: view.panel.fg
           font.family: view.panel.font
           font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        Column {
+          id: meeting
+          anchors.left: when.right
+          anchors.right: actions.left
+          anchors.rightMargin: Style.spacing.lg
+          anchors.verticalCenter: parent.verticalCenter
+
+          Text {
+            width: parent.width
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: srow.modelData.title
+            color: view.panel.fg
+            font.family: view.panel.font
+            font.pixelSize: Style.font.body
+          }
+          Text {
+            width: parent.width
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: "→ " + view.service.projectLabel(Model.byId(view.db.projects, srow.modelData.projectId))
+            color: view.panel.dim
+            font.family: view.panel.font
+            font.pixelSize: Style.font.bodySmall
+          }
         }
 
         Row {
@@ -142,15 +211,15 @@ Column {
           spacing: Style.spacing.sm
 
           Button {
-            text: "Book " + Model.fmtHours(modelData.minutes)
+            text: "Book " + Model.fmtHours(srow.modelData.minutes)
             fontFamily: view.panel.font
             bordered: true
-            onClicked: view.service.confirmSuggestion(modelData)
+            onClicked: view.service.confirmSuggestion(srow.modelData)
           }
           Button {
             text: "Didn't happen"
             fontFamily: view.panel.font
-            onClicked: view.service.dismissSuggestion(modelData)
+            onClicked: view.service.dismissSuggestion(srow.modelData)
           }
         }
       }
@@ -220,6 +289,13 @@ Column {
         width: view.width
         height: project ? view.rowH : view.rowH + (index > 0 ? Style.spacing.md : 0)
 
+        Rectangle {
+          visible: !!row.project && row.project.id === view.cursorId
+          anchors.fill: parent
+          radius: Style.cornerRadius
+          color: Style.hoverFill
+        }
+
         // Customer header
         Text {
           visible: !row.project
@@ -259,9 +335,12 @@ Column {
               required property string modelData
               readonly property int minutes: row.project ? Model.minutesOn(view.db, modelData, row.project.id) : 0
 
+              readonly property bool selected: !!row.project && row.project.id === view.cursorId && modelData === view.cursorDay
               width: view.cellW
               height: view.rowH
               radius: Style.cornerRadius
+              border.width: selected ? 1 : 0
+              border.color: view.panel.accent
               color: cellMouse.containsMouse ? Style.hoverFill
                    : (modelData === view.today ? Qt.rgba(view.panel.accent.r, view.panel.accent.g, view.panel.accent.b, 0.08) : "transparent")
 
@@ -309,7 +388,7 @@ Column {
 
             Button {
               anchors.centerIn: parent
-              visible: !!row.project && !row.project.archived
+              visible: !!row.project && !row.project.archived && view.isCurrentWeek
               iconText: row.running ? "󰓛" : "󰐊"
               tooltipText: row.running ? "Stop and book" : "Start timer"
               active: row.running
@@ -372,7 +451,8 @@ Column {
   }
 
   Text {
-    text: "click +0:15 · right-click −0:15 · shift-click ±1:00 · scroll to step · ▶ timer rounds to the nearest 0:15"
+    text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · space " + (view.isCurrentWeek ? "timer" : "back to this week")
+        + " · or click +0:15, right-click −0:15, scroll"
     color: view.panel.faint
     font.family: view.panel.font
     font.pixelSize: Style.font.caption
