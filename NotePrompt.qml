@@ -17,10 +17,13 @@ Rectangle {
   readonly property var project: ask ? Model.byId(service.db.projects, ask.projectId) : null
   readonly property var lines: ask ? Model.notesOn(service.db, ask.day, ask.projectId) : []
 
-  function focusInput() { input.forceActiveFocus() }
+  // The panel focuses this when it opens with a prompt waiting.
+  readonly property Item input: inputField
+
+  function focusInput() { inputField.forceActiveFocus() }
 
   function close() {
-    input.text = ""
+    inputField.text = ""
     service.closeNotePrompt()
     panel.focusGrid()
   }
@@ -30,7 +33,12 @@ Rectangle {
   radius: Style.cornerRadius
   color: Qt.rgba(panel.accent.r, panel.accent.g, panel.accent.b, 0.15)
 
-  onAskChanged: if (ask) Qt.callLater(focusInput)
+  // A new prompt starts empty, also if the last one was left by closing
+  // the panel halfway through typing.
+  onAskChanged: {
+    inputField.text = ""
+    if (ask) Qt.callLater(focusInput)
+  }
 
   Column {
     id: content
@@ -108,7 +116,7 @@ Rectangle {
       height: Style.spacing.controlHeight
 
       TextField {
-        id: input
+        id: inputField
         anchors.left: parent.left
         anchors.right: doneButton.left
         anchors.rightMargin: Style.spacing.md
@@ -135,7 +143,7 @@ Rectangle {
         text: "Done"
         fontFamily: prompt.panel.font
         onClicked: {
-          if (input.text.trim()) prompt.service.addNote(prompt.ask.day, prompt.ask.projectId, input.text)
+          if (inputField.text.trim()) prompt.service.addNote(prompt.ask.day, prompt.ask.projectId, inputField.text)
           prompt.close()
         }
       }

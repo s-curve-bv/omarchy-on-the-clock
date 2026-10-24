@@ -50,8 +50,6 @@ Panel {
   onOpenedChanged: {
     if (!opened) return
     weekView.resetCursor()
-    if (root.service && root.service.notePrompt) notePrompt.focusInput()
-    else keys.forceActiveFocus()
   }
 
   function switchPanel(direction) {
@@ -66,7 +64,9 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    focusTarget: keys
+    // KeyboardPanel focuses this after opening; a waiting "what did you do?"
+    // prompt takes the keys first.
+    focusTarget: root.service && root.service.notePrompt ? notePrompt.input : keys
     contentWidth: panel.fittedContentWidth(Style.space(780))
     contentHeight: panel.fittedContentHeight(column.implicitHeight + 2 * root.edge, Style.space(860))
 

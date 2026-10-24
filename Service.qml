@@ -411,7 +411,7 @@ Item {
 
   Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.dataDir, root.demoDir])
 
-  // omarchy-shell ontheclock toggle | start <project> | stop | status | backup | demo [on|off]
+  // omarchy-shell ontheclock toggle | start <project> | stop | status | backup | demo [on|off] | state
   IpcHandler {
     target: "ontheclock"
 
@@ -449,6 +449,16 @@ Item {
       root.demoQuiet = state === "quiet"
       root.setDemo(state === "on" || state === "quiet" ? true : state === "off" ? false : !root.demo)
       return root.demo ? "demo data" : "real data"
+    }
+
+    // Read-only snapshot for tests/e2e.sh.
+    function state(): string {
+      return JSON.stringify({
+        demo: root.demo, loaded: root.loaded, today: root.today,
+        timer: root.timer, notePrompt: root.notePrompt,
+        entriesToday: root.db.entries[root.today] || {}, notesToday: root.db.notes[root.today] || {},
+        links: root.db.calendar.links
+      })
     }
 
     function status(): string {
