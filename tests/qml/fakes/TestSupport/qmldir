@@ -1,0 +1,2 @@
+module TestSupport
+singleton Fs 1.0 Fs.qml
