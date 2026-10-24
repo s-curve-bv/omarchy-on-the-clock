@@ -1,23 +1,32 @@
-// Prints the crop geometry (WxH+X+Y) of the open panel in a screenshot,
-// given as a binary PPM on stdin. The panel is the rectangle whose left and
-// right borders are long vertical runs of the same colour, with matching
-// tops and bottoms and a bottom border between them, starting just under
-// the bar.
-//   magick shot.png ppm:- | node demo/find-panel.js
-const buf = require("fs").readFileSync(0);
+// Prints the crop geometry (WxH+X+Y) of the open panel, given a screenshot
+// with the panel open and one of the same screen with it closed, both as
+// binary PPM files. Candidates are rectangles whose left and right borders
+// are long vertical runs of one colour with matching tops and bottoms and a
+// bottom border between them, starting just under the bar; the panel is the
+// one whose inside changes most when it closes, which rules out look-alikes
+// such as coloured blocks in a terminal.
+//   node demo/find-panel.js open.ppm closed.ppm
+const fs = require("fs");
 
-let pos = 0;
-function token() {
-  while (/\s/.test(String.fromCharCode(buf[pos]))) pos++;
-  const start = pos;
-  while (!/\s/.test(String.fromCharCode(buf[pos]))) pos++;
-  return buf.toString("ascii", start, pos);
+function readPpm(file) {
+  const buf = fs.readFileSync(file);
+  let pos = 0;
+  function token() {
+    while (/\s/.test(String.fromCharCode(buf[pos]))) pos++;
+    const start = pos;
+    while (!/\s/.test(String.fromCharCode(buf[pos]))) pos++;
+    return buf.toString("ascii", start, pos);
+  }
+  if (token() !== "P6") throw new Error(file + ": expected a binary PPM");
+  const width = Number(token()), height = Number(token()), max = Number(token());
+  if (max !== 255) throw new Error(file + ": expected 8-bit PPM");
+  const data = buf.subarray(pos + 1);
+  return { width, height, px: (x, y) => { const i = (y * width + x) * 3; return (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]; } };
 }
-if (token() !== "P6") throw new Error("expected a binary PPM");
-const W = Number(token()), H = Number(token()), max = Number(token());
-if (max !== 255) throw new Error("expected 8-bit PPM");
-const data = buf.subarray(pos + 1);
-const px = (x, y) => { const i = (y * W + x) * 3; return (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]; };
+
+const open = readPpm(process.argv[2]);
+const closed = readPpm(process.argv[3]);
+const W = open.width, H = open.height, px = open.px;
 
 // Vertical runs of one colour at least MIN tall.
 const MIN = 200;
@@ -56,8 +65,13 @@ for (const list of byKey.values()) {
   for (let y = left.bottom - 10; y <= left.bottom + 10 && !joined; y++)
     joined = y >= 0 && y < H && px(cx, y) === left.color && px(cx - 100, y) === left.color;
   if (!joined) continue;
-  const area = width * (left.bottom - left.top);
-  if (!best || area > best.area) best = { left, right, area };
+  // Share of the inside that differs once the panel is closed.
+  let changed = 0, total = 0;
+  for (let y = left.top + 8; y < left.bottom - 8; y += 16)
+    for (let x = left.x + 8; x < right.x - 8; x += 16, total++)
+      if (px(x, y) !== closed.px(x, y)) changed++;
+  const score = total ? changed / total : 0;
+  if (score > 0.3 && (!best || score > best.score)) best = { left, right, score };
 }
 if (!best) { console.error("no panel found"); process.exit(1); }
 

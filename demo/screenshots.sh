@@ -1,36 +1,28 @@
 #!/bin/bash
-# Retakes screenshots/*.png and preview.png with the demo data.
+# Retakes screenshots/*.png and preview.png with the demo data, or writes
+# them to another folder for a look before they go into the repo.
 #
-# Swaps the demo data in for your own hours.json while it runs and puts your
-# file back afterwards, also when interrupted. The shell restarts a few times
-# and the panel opens on its own; don't touch it until the script is done.
-#   demo/screenshots.sh
+# Uses the plugin's demo mode, so your own hours.json is never touched. The
+# shell restarts a few times and the panel opens on its own; don't touch it
+# until the script is done. The shell is back on your data afterwards.
+#   demo/screenshots.sh [output-folder]
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-data="$HOME/.local/share/on-the-clock/hours.json"
-cache="$HOME/.cache/on-the-clock-demo/events.json"
+shots=${1:-$here/screenshots}
 id=s-curve.on-the-clock
 work=$(mktemp -d)
 
 restore() {
   cp "$work/Panel.qml" "$here/Panel.qml"
   cp "$work/AdminView.qml" "$here/AdminView.qml"
-  if [[ -f $work/hours.json ]]; then
-    cp "$work/hours.json" "$data"
-    cmp -s "$work/hours.json" "$data" && echo "your data is back" || echo "RESTORE FAILED: your data is in $work/hours.json"
-  fi
   omarchy-restart-shell >/dev/null 2>&1 || true
 }
 trap restore EXIT
 
-node "$here/demo/make-demo.js"
-mkdir -p "$(dirname "$cache")" "$here/screenshots"
-cp "$here/demo/out/events.json" "$cache"
+mkdir -p "$shots"
 cp "$here/Panel.qml" "$work/Panel.qml"
 cp "$here/AdminView.qml" "$work/AdminView.qml"
-if [[ -f $data ]]; then cp "$data" "$work/hours.json"; fi
-cp "$here/demo/out/hours.json" "$data"
 
 output=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
 
@@ -47,14 +39,20 @@ shot() {
   fi
   omarchy-restart-shell >/dev/null 2>&1
   sleep 5
+  omarchy-shell ontheclock demo quiet >/dev/null
+  sleep 1
   omarchy-shell shell summon "$id" '{}' >/dev/null
   sleep 2
   grim -o "$output" "$work/full.png"
   omarchy-shell shell hide "$id" >/dev/null
+  sleep 1
+  grim -o "$output" "$work/closed.png"
+  magick "$work/full.png" "$work/open.ppm"
+  magick "$work/closed.png" "$work/closed.ppm"
   local geometry
-  geometry=$(magick "$work/full.png" ppm:- | node "$here/demo/find-panel.js")
-  magick "$work/full.png" -crop "$geometry" +repage -resize '1200x>' -strip "$here/screenshots/$1.png"
-  echo "screenshots/$1.png"
+  geometry=$(node "$here/demo/find-panel.js" "$work/open.ppm" "$work/closed.ppm")
+  magick "$work/full.png" -crop "$geometry" +repage -resize '1200x>' -strip "$shots/$1.png"
+  echo "$shots/$1.png"
 }
 
 shot week week
@@ -63,4 +61,4 @@ shot calendar calendar
 shot admin admin
 shot admin-edit admin edit
 shot admin-settings admin bottom
-cp "$here/screenshots/overview.png" "$here/preview.png"
+if [[ -z ${1:-} ]]; then cp "$shots/overview.png" "$here/preview.png"; fi
