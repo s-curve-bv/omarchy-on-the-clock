@@ -7,6 +7,7 @@
 //   projects:  [{ id, customerId, name, rateId, billable, archived,
 //                 budgetType: "none" | "hours" | "money", budget }]
 //   entries:   { "YYYY-MM-DD": { projectId: minutes } }
+//   notes:     { "YYYY-MM-DD": { projectId: ["what was done", ...] } }
 //   targets:   { month, year }                      income, excl. VAT
 //   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to} }
 //   calendar:  { links: { seriesId: projectId }, decided: { uid: "confirmed" | "dismissed" } }
@@ -109,6 +110,7 @@ function defaults() {
     customers: [],
     projects: [],
     entries: {},
+    notes: {},
     targets: { month: 0, year: 0 },
     timer: null,
     calendar: { links: {}, decided: {} },
@@ -128,6 +130,8 @@ function normalize(raw) {
   var d = defaults()
   if (!raw || typeof raw !== "object") return d
   var out = {}
+  // Unknown fields are kept, so data from a newer version survives a save.
+  for (var u in raw) if (!(u in d)) out[u] = raw[u]
   for (var k in d) out[k] = raw[k] !== undefined && raw[k] !== null ? raw[k] : d[k]
   if (raw.timer === null || raw.timer === undefined) out.timer = null
   out.targets = Object.assign({}, d.targets, raw.targets || {})
@@ -135,6 +139,10 @@ function normalize(raw) {
   out.calendar = Object.assign({}, d.calendar, raw.calendar || {})
   out.calendar.links = out.calendar.links || {}
   out.calendar.decided = out.calendar.decided || {}
+  // Notes used to be one string per cell.
+  for (var nk in out.notes)
+    for (var np in out.notes[nk])
+      if (!Array.isArray(out.notes[nk][np])) out.notes[nk][np] = [String(out.notes[nk][np])]
   return out
 }
 
@@ -171,6 +179,28 @@ function setMinutes(data, key, projectId, minutes) {
 
 function addMinutes(data, key, projectId, minutes) {
   setMinutes(data, key, projectId, minutesOn(data, key, projectId) + minutes)
+}
+
+// Notes are lines per day and project.
+function notesOn(data, key, projectId) {
+  var day = data.notes[key]
+  var v = day ? day[projectId] : null
+  return Array.isArray(v) ? v : (v ? [String(v)] : [])
+}
+
+// Mutates `data`: replaces the lines of one day/project, dropping empty
+// lines and empty cells.
+function setNotes(data, key, projectId, lines) {
+  var clean = (lines || []).map(function(l) { return String(l || "").trim() }).filter(function(l) { return l })
+  var day = data.notes[key] || {}
+  if (clean.length) day[projectId] = clean
+  else delete day[projectId]
+  if (Object.keys(day).length) data.notes[key] = day
+  else delete data.notes[key]
+}
+
+function addNote(data, key, projectId, text) {
+  setNotes(data, key, projectId, notesOn(data, key, projectId).concat([text]))
 }
 
 // Sums entries with from <= day <= to (inclusive keys; null = unbounded).
@@ -259,6 +289,15 @@ function usableEvent(e) {
   return !!e && !e.allDay && e.status !== "cancelled" && e.response !== "declined"
 }
 
+// Meetings overlapping a stretch of time, e.g. while a timer ran; earliest
+// first.
+function meetingsDuring(events, fromMs, toMs) {
+  return (events || [])
+    .filter(function(e) { return usableEvent(e) && Date.parse(e.start) < toMs && Date.parse(e.end) > fromMs })
+    .map(function(e) { return { uid: e.uid, title: e.title || "(no title)", start: Date.parse(e.start), end: Date.parse(e.end) } })
+    .sort(function(a, b) { return a.start - b.start })
+}
+
 function eventMinutes(e) {
   return Math.max(QUARTER, roundQuarter((Date.parse(e.end) - Date.parse(e.start)) / 60000))
 }
@@ -323,6 +362,7 @@ if (typeof module !== "undefined") {
     roundQuarter: roundQuarter, fmtHours: fmtHours, fmtMoney: fmtMoney, fmtMoneyShort: fmtMoneyShort,
     uid: uid, defaults: defaults, normalize: normalize, parse: parse, byId: byId,
     rateFor: rateFor, isBillable: isBillable, minutesOn: minutesOn, setMinutes: setMinutes,
+    notesOn: notesOn, setNotes: setNotes, addNote: addNote, meetingsDuring: meetingsDuring,
     addMinutes: addMinutes, totals: totals, budgetUsage: budgetUsage, isWorkDay: isWorkDay,
     workDaysBetween: workDaysBetween, pace: pace, timerElapsedMinutes: timerElapsedMinutes,
     stopTimer: stopTimer, recurringSeries: recurringSeries, suggestions: suggestions,

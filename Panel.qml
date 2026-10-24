@@ -97,6 +97,7 @@ Panel {
         else if (k === Qt.Key_Plus || k === Qt.Key_Equal) weekView.addToCursor(hour ? 60 : 15)
         else if (k === Qt.Key_Minus || k === Qt.Key_Underscore) weekView.addToCursor(hour || k === Qt.Key_Underscore ? -60 : -15)
         else if (k === Qt.Key_Space) weekView.toggleCursor()
+        else if (k === Qt.Key_N) weekView.focusNote()
         else return
         event.accepted = true
       }
@@ -247,6 +248,13 @@ Panel {
               fontFamily: root.font
               onClicked: root.service.stopTimer()
             }
+          }
+
+          NotePrompt {
+            id: notePrompt
+            width: parent.width
+            service: root.service
+            panel: root
           }
 
           // ---- Tabs ----

@@ -51,6 +51,7 @@ Column {
   // project's timer, + and - change the hours in that cell.
   property string cursorId: ""
   property string cursorDay: today
+  readonly property var cursorProject: Model.byId(db.projects, cursorId)
   readonly property var selectable: rows
     .filter(function(r) { return r.project && view.service && view.service.activeProjects.indexOf(r.project) !== -1 })
     .map(function(r) { return r.project.id })
@@ -79,6 +80,10 @@ Column {
   function moveDay(step) {
     cursorDay = Model.addDays(days.indexOf(cursorDay) === -1 ? days[0] : cursorDay, step)
     weekStart = Model.weekStart(cursorDay)
+  }
+
+  function focusNote() {
+    if (cursorId && days.indexOf(cursorDay) !== -1) noteField.forceActiveFocus()
   }
 
   function addToCursor(minutes) {
@@ -359,6 +364,8 @@ Column {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
                 onClicked: function(mouse) {
+                  view.cursorId = row.project.id
+                  view.cursorDay = cell.modelData
                   var step = (mouse.modifiers & Qt.ShiftModifier) ? 60 : 15
                   view.service.addMinutes(cell.modelData, row.project.id, mouse.button === Qt.RightButton ? -step : step)
                 }
@@ -450,8 +457,81 @@ Column {
     }
   }
 
+  // ---- Notes for the selected cell ----
+  // One line per thing done. Lines can be edited in place (empty removes
+  // one); the field below adds a line on Enter and keeps focus for the next.
+  Column {
+    id: notes
+    readonly property bool active: !!view.cursorProject && view.days.indexOf(view.cursorDay) !== -1
+    readonly property var lines: active ? Model.notesOn(view.db, view.cursorDay, view.cursorId) : []
+    visible: active
+    width: parent.width
+    spacing: Style.spacing.xs
+
+    function replaceLine(i, text) {
+      var next = lines.slice()
+      next[i] = text
+      view.service.setNotes(view.cursorDay, view.cursorId, next)
+    }
+
+    Text {
+      leftPadding: Style.spacing.lg
+      textFormat: Text.PlainText
+      text: view.cursorProject ? "Notes · " + view.cursorProject.name + " · " + Qt.formatDate(Model.parseKey(view.cursorDay), "ddd d MMM") : ""
+      color: view.panel.dim
+      font.family: view.panel.font
+      font.pixelSize: Style.font.bodySmall
+      font.bold: true
+    }
+
+    Repeater {
+      model: notes.lines.length
+
+      delegate: TextField {
+        id: line
+        required property int index
+        readonly property string value: notes.lines[index] || ""
+        property Timer pending: Timer { interval: 800; onTriggered: line.save() }
+
+        function save() {
+          pending.stop()
+          if (text !== value) notes.replaceLine(index, text)
+        }
+
+        width: notes.width
+        font.family: view.panel.font
+        selectByMouse: true
+        Component.onCompleted: text = value
+        onValueChanged: if (!activeFocus) text = value
+        onActiveFocusChanged: if (!activeFocus) { save(); text = value }
+        onTextEdited: pending.restart()
+        Keys.onReturnPressed: view.panel.focusGrid()
+        Keys.onEnterPressed: view.panel.focusGrid()
+        Keys.onEscapePressed: view.panel.focusGrid()
+      }
+    }
+
+    TextField {
+      id: noteField
+      width: notes.width
+      font.family: view.panel.font
+      selectByMouse: true
+      placeholderText: notes.lines.length ? "Add another line (n)" : "What did you do? (n)"
+
+      function submit() {
+        if (!text.trim()) { view.panel.focusGrid(); return }
+        view.service.addNote(view.cursorDay, view.cursorId, text)
+        text = ""
+      }
+      Keys.onReturnPressed: submit()
+      Keys.onEnterPressed: submit()
+      Keys.onEscapePressed: { if (text.trim()) submit(); view.panel.focusGrid() }
+      onActiveFocusChanged: if (!activeFocus && text.trim()) submit()
+    }
+  }
+
   Text {
-    text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · space " + (view.isCurrentWeek ? "timer" : "back to this week")
+    text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · n note · space " + (view.isCurrentWeek ? "timer" : "back to this week")
         + " · or click +0:15, right-click −0:15, scroll"
     color: view.panel.faint
     font.family: view.panel.font

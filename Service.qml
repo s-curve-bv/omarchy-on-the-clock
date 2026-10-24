@@ -109,26 +109,68 @@ Item {
     mutate(function(d) { Model.addMinutes(d, key, projectId, delta) })
   }
 
+  // ---- Notes ----
+  function addNote(key, projectId, text) {
+    if (!String(text || "").trim()) return
+    mutate(function(d) { Model.addNote(d, key, projectId, text) })
+  }
+
+  function setNotes(key, projectId, lines) {
+    mutate(function(d) { Model.setNotes(d, key, projectId, lines) })
+  }
+
+  // After a timer stops with time booked, the panel asks what was done and
+  // offers the meetings from that stretch. Not saved: a restart drops it.
+  property var notePrompt: null   // { day, projectId, minutes, from, to }
+  readonly property var notePromptMeetings: notePrompt ? Model.meetingsDuring(events, notePrompt.from, notePrompt.to) : []
+
+  function askNote(project, startedAt, minutes) {
+    if (!project || minutes <= 0) return
+    notePrompt = { day: Model.dateKey(new Date(startedAt)), projectId: project.id, minutes: minutes, from: startedAt, to: Date.now() }
+    Quickshell.execDetached(["omarchy-shell", "shell", "summon", "s-curve.on-the-clock", "{}"])
+  }
+
+  // "Yes, that meeting is what I did": add it as a line, and mark that
+  // occurrence handled so Week doesn't offer to book it a second time.
+  function confirmMeeting(m) {
+    if (!notePrompt) return
+    var p = notePrompt
+    var line = m.title + " (" + Qt.formatTime(new Date(m.start), "HH:mm") + "–" + Qt.formatTime(new Date(m.end), "HH:mm") + ")"
+    mutate(function(d) {
+      Model.addNote(d, p.day, p.projectId, line)
+      d.calendar.decided[m.uid] = "confirmed"
+    })
+  }
+
+  function closeNotePrompt() { notePrompt = null }
+
   // ---- Timer ----
   function startTimer(projectId) {
     var booked = 0
     var previous = null
+    var previousStart = 0
     mutate(function(d) {
       if (d.timer) {
         previous = Model.byId(d.projects, d.timer.projectId)
+        previousStart = d.timer.startedAt
         booked = Model.stopTimer(d, Date.now())
       }
       d.timer = { projectId: projectId, startedAt: Date.now() }
       d.settings.lastProjectId = projectId
     })
-    if (previous && booked > 0) notify("Booked " + Model.fmtHours(booked), projectLabel(previous))
+    if (previous && booked > 0) {
+      notify("Booked " + Model.fmtHours(booked), projectLabel(previous))
+      askNote(previous, previousStart, booked)
+    }
   }
 
   function stopTimer() {
     if (!timer) return 0
     var p = timerProject
+    var startedAt = timer.startedAt
     var booked = 0
     mutate(function(d) { booked = Model.stopTimer(d, Date.now()) })
+    askNote(p, startedAt, booked)
     notify(booked > 0 ? "Booked " + Model.fmtHours(booked) : "Timer stopped, under 8 minutes so nothing booked", projectLabel(p))
     return booked
   }

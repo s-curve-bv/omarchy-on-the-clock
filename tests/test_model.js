@@ -135,3 +135,31 @@ test("demo data is marked and survives a save round trip", () => {
   assert.equal(Model.defaults().settings.demo, undefined);
   assert.equal(Model.suggestions(demo.hours, demo.events, Date.parse("2026-10-24T14:00:00")).length, 2);
 });
+
+test("notes are lines per day and project", () => {
+  const d = Model.defaults();
+  Model.addNote(d, "2026-10-20", "p1", "  Standup met Rein  ");
+  Model.addNote(d, "2026-10-20", "p1", "PR reviews");
+  assert.deepEqual(Model.notesOn(d, "2026-10-20", "p1"), ["Standup met Rein", "PR reviews"]);
+  assert.deepEqual(Model.notesOn(d, "2026-10-20", "p2"), []);
+  assert.deepEqual(Model.parse(JSON.stringify(d)).notes["2026-10-20"].p1, ["Standup met Rein", "PR reviews"]);
+  // Old single-string notes load as one line.
+  assert.deepEqual(Model.parse('{"notes":{"2026-10-20":{"p1":"a; b"}}}').notes["2026-10-20"].p1, ["a; b"]);
+  Model.setNotes(d, "2026-10-20", "p1", ["", "  "]);
+  assert.deepEqual(d.notes, {});
+});
+
+test("meetings during a stretch of time", () => {
+  const ev = [
+    { uid: "a", title: "Standup", start: "2026-10-20T09:00:00Z", end: "2026-10-20T09:30:00Z" },
+    { uid: "b", title: "Lunch", start: "2026-10-20T12:00:00Z", end: "2026-10-20T13:00:00Z" },
+    { uid: "c", title: "Declined", start: "2026-10-20T09:00:00Z", end: "2026-10-20T10:00:00Z", response: "declined" },
+    { uid: "d", title: "All day", start: "2026-10-20T00:00:00Z", end: "2026-10-21T00:00:00Z", allDay: true },
+  ];
+  const got = Model.meetingsDuring(ev, Date.parse("2026-10-20T09:15:00Z"), Date.parse("2026-10-20T12:30:00Z"));
+  assert.deepEqual(got.map(m => m.uid), ["a", "b"]);
+});
+
+test("unknown fields survive a load", () => {
+  assert.deepEqual(Model.parse('{"future": {"x": 1}}').future, { x: 1 });
+});
