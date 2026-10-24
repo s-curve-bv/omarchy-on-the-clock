@@ -136,6 +136,16 @@ test("demo data is marked and survives a save round trip", () => {
   assert.equal(Model.suggestions(demo.hours, demo.events, Date.parse("2026-10-24T14:00:00")).length, 2);
 });
 
+test("demo data with a running timer during a meeting", () => {
+  const Demo = require("../Demo.js");
+  const now = Date.parse("2026-10-24T15:00:00");
+  const demo = Demo.build(Model, "2026-10-24", "x", now);
+  assert.equal(demo.hours.timer.projectId, "p1");
+  const met = Model.meetingsDuring(demo.events, demo.hours.timer.startedAt, now);
+  assert.deepEqual(met.map(m => m.title), ["Route planner design review"]);
+  assert.ok(Object.keys(demo.hours.notes).length > 0);
+});
+
 test("notes are lines per day and project", () => {
   const d = Model.defaults();
   Model.addNote(d, "2026-10-20", "p1", "  Standup met Rein  ");

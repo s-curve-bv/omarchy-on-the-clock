@@ -26,7 +26,10 @@ cp "$here/AdminView.qml" "$work/AdminView.qml"
 
 output=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
 
-# shot <name> <tab> [bottom | edit]
+# shot <name> <tab> [bottom | edit | stop | keys...]
+#   bottom  scroll to the end      edit  open a project editor
+#   stop    stop the demo timer, which opens the "what did you do?" prompt
+#   keys    anything else: keys to press first (navigation only), e.g. "Left Left"
 shot() {
   cp "$work/Panel.qml" "$here/Panel.qml"
   cp "$work/AdminView.qml" "$here/AdminView.qml"
@@ -39,10 +42,22 @@ shot() {
   fi
   omarchy-restart-shell >/dev/null 2>&1
   sleep 5
-  omarchy-shell ontheclock demo quiet >/dev/null
+  # Everything below may act on the data, so it must be the demo data.
+  if [[ $(omarchy-shell ontheclock demo quiet) != "demo data" ]]; then
+    echo "demo mode did not switch on; stopping" >&2
+    exit 1
+  fi
   sleep 1
-  omarchy-shell shell summon "$id" '{}' >/dev/null
+  if [[ ${3:-} == stop ]]; then
+    omarchy-shell ontheclock stop >/dev/null   # opens the panel on its own
+  else
+    omarchy-shell shell summon "$id" '{}' >/dev/null
+  fi
   sleep 2
+  case ${3:-} in
+    ""|bottom|edit|stop) ;;
+    *) for key in $3; do wtype -k "$key"; sleep 0.2; done; sleep 0.8 ;;
+  esac
   grim -o "$output" "$work/full.png"
   omarchy-shell shell hide "$id" >/dev/null
   sleep 1
@@ -55,7 +70,8 @@ shot() {
   echo "$shots/$1.png"
 }
 
-shot week week
+shot week week "Left Left"
+shot stop-prompt week stop
 shot overview overview
 shot calendar calendar
 shot admin admin

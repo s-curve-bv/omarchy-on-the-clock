@@ -324,7 +324,7 @@ Item {
     if (on === demo) return
     backupDelay.stop()
     if (on) {
-      var built = Demo.build(Model, today, "~/.cache/on-the-clock-demo/events.json")
+      var built = Demo.build(Model, today, "~/.cache/on-the-clock-demo/events.json", Date.now())
       demoEvents.setText(JSON.stringify({ events: built.events }) + "\n")
       demoHours.setText(JSON.stringify(built.hours, null, 2) + "\n")
     }

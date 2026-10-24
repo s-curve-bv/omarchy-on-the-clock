@@ -1,10 +1,12 @@
 // Fictional data for demo mode and the screenshots: three customers, a year
 // of hours up to `today`, and a fake calendar of recurring meetings around
 // it. One finished project and one former customer are archived, with hours
-// in the first months of the year so they show up when you browse back. Deterministic for a given day. Takes Model as an argument so it runs
+// in the first months of the year so they show up when you browse back.
+// Given `nowMs`, a timer has been running for 52 minutes during a meeting,
+// so stopping it shows the "what did you do?" prompt with that meeting. Deterministic for a given day. Takes Model as an argument so it runs
 // both in QML (demo mode) and under node (demo/make-demo.js).
 
-function build(Model, today, calendarPath) {
+function build(Model, today, calendarPath, nowMs) {
   var d = Model.defaults()
   d.rates = [{ id: "r1", name: "Development", amount: 95 }, { id: "r2", name: "Solution architecture", amount: 120 }]
   d.customers = [
@@ -76,6 +78,26 @@ function build(Model, today, calendarPath) {
     }
   }
   d.calendar.links = { "demo-standup": "p4", "demo-review": "p2" }
+
+  // Notes on this week's cells, one line per thing done.
+  var lines = {
+    p1: [["Pagination for /routes", "Fix flaky integration tests"], ["Route optimiser: time windows"], ["Code review with Sam", "Deploy to staging"]],
+    p3: [["Consent screen", "Accessibility pass"], ["Review with the care team"]],
+    p2: [["Draft target architecture"], ["Workshop with Northwind IT (whiteboard photos in Drive)"]]
+  }
+  for (var nk = Model.weekStart(today), n = 0; nk < today; nk = Model.addDays(nk, 1), n++)
+    for (var pid in lines)
+      if (Model.minutesOn(d, nk, pid)) Model.setNotes(d, nk, pid, lines[pid][n % lines[pid].length])
+
+  if (nowMs) {
+    d.timer = { projectId: "p1", startedAt: nowMs - 52 * 60000 }
+    d.settings.lastProjectId = "p1"
+    events.push({
+      uid: "demo-oneoff", title: "Route planner design review", allDay: false, recurring: false, seriesId: null,
+      start: new Date(nowMs - 40 * 60000).toISOString(), end: new Date(nowMs - 10 * 60000).toISOString(),
+      status: "confirmed", response: "accepted"
+    })
+  }
 
   // Leave the two most recent meetings waiting for a decision.
   var now = Model.parseKey(today).getTime() + 14 * 3600000

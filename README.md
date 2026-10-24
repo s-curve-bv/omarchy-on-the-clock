@@ -24,12 +24,15 @@ To open the panel from the keyboard, add a binding to
 ## What's in the panel
 
 A running timer sits in a strip above the tabs, with what stopping now would
-book and on which day.
+book and on which day. When you stop it, the panel asks what you did: the
+calendar meetings during that time are offered with one click, and anything
+else you type becomes a line in that day's notes.
 
 - **Week**: projects × days. Ended calendar meetings you linked to a project
   wait at the top to be booked or skipped. ▶ on a row starts that project's
   timer; the timer books on the day it started, rounded to the nearest 0:15,
-  so it is only offered in the current week.
+  so it is only offered in the current week. Under the grid are the notes
+  of the selected cell, one line per thing done.
 - **Overview**: month and year income against target, with a marker for
   where you should be today and plain-language forecasts: where your pace
   ends up and what it takes per work day to reach the target. Below it a
@@ -41,20 +44,20 @@ book and on which day.
   and backup. Finished projects and former customers can be archived: they
   disappear from the lists but keep counting in the months they were used.
 
-| Week | Calendar | Admin |
+| Week with a running timer and notes | After stopping the timer | Admin |
 |---|---|---|
-| ![Week](screenshots/week.png) | ![Calendar](screenshots/calendar.png) | ![Admin](screenshots/admin-edit.png) |
+| ![Week](screenshots/week.png) | ![Stop prompt](screenshots/stop-prompt.png) | ![Admin](screenshots/admin-edit.png) |
 
 ### Keyboard
 
-In the Week tab:
-
 | Key | Does |
 |---|---|
-| ↑ ↓ or k j | select a project |
-| ← → or h l | select a day, continuing into the previous or next week |
-| + − | add or remove 0:15 in the selected cell, with shift 1:00 |
-| space | start or stop the selected project's timer |
+| w o c a | Week, Overview, Calendar, Admin |
+| ↑ ↓ or k j | Week: select a project |
+| ← → or h l | Week: select a day, continuing into the previous or next week |
+| + − | Week: add or remove 0:15 in the selected cell, with shift 1:00 |
+| n | Week: add a note line to the selected cell; Enter adds, Esc returns |
+| space | Week: start or stop the selected project's timer |
 | Esc | close the panel |
 
 With the mouse: click a cell for +0:15, right-click for −0:15, shift-click
@@ -96,7 +99,8 @@ remote field after the first push.
 
 Click the "Data:" line at the bottom of Admin → Settings five times (or run
 `omarchy-shell ontheclock demo on`) to try everything on fictional customers
-and a year of hours, including archived ones. A banner shows while it is on.
+and a year of hours, including archived ones, notes and a timer that has
+been running for 52 minutes during a meeting. A banner shows while it is on.
 Demo data lives in `~/.cache/on-the-clock-demo`, is never saved over your own
 file and is never backed up; a shell restart always starts on your own data.
 
