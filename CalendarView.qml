@@ -12,7 +12,7 @@ Column {
   property var panel: null
 
   readonly property var db: service ? service.db : Model.defaults()
-  property bool linkedOnly: false
+  property string filter: "all"   // all | linked | unlinked
 
   readonly property var projectOptions: {
     var opts = [{ value: "", label: "Not linked" }]
@@ -24,8 +24,22 @@ Column {
 
   readonly property var shown: {
     var all = service ? service.series : []
-    if (!linkedOnly) return all
-    return all.filter(function(s) { return !!view.db.calendar.links[s.seriesId] })
+    if (filter === "all") return all
+    return all.filter(function(s) { return !!view.db.calendar.links[s.seriesId] === (view.filter === "linked") })
+  }
+
+  // The project dropdown fits the longest "Customer · Project", up to half
+  // the row so the meeting title keeps room.
+  readonly property int pickerW: {
+    var w = 0
+    for (var i = 0; i < projectOptions.length; i++) w = Math.max(w, metrics.advanceWidth(projectOptions[i].label))
+    return Math.min(width / 2, Math.max(Style.space(280), Math.ceil(w) + Style.space(56)))
+  }
+
+  FontMetrics {
+    id: metrics
+    font.family: view.panel ? view.panel.font : Style.font.family
+    font.pixelSize: Style.font.body
   }
 
   function when(ms) { return ms ? Qt.formatDate(new Date(ms), "ddd d MMM") : "–" }
@@ -54,22 +68,24 @@ Column {
     font.pixelSize: Style.font.body
   }
 
-  Row {
+  ButtonGroup {
     visible: view.service && view.service.calendarAvailable
-    spacing: Style.spacing.md
+    fontFamily: view.panel.font
+    options: [
+      { value: "all", label: "All" },
+      { value: "linked", label: "Linked" },
+      { value: "unlinked", label: "Not linked" }
+    ]
+    value: view.filter
+    onChanged: function(v) { view.filter = v }
+  }
 
-    ToggleSwitch {
-      anchors.verticalCenter: parent.verticalCenter
-      checked: view.linkedOnly
-      onToggled: view.linkedOnly = !view.linkedOnly
-    }
-    Text {
-      anchors.verticalCenter: parent.verticalCenter
-      text: "Only linked meetings"
-      color: view.panel.fg
-      font.family: view.panel.font
-      font.pixelSize: Style.font.body
-    }
+  Text {
+    visible: view.service && view.service.calendarAvailable && view.shown.length === 0
+    text: view.filter === "linked" ? "No meetings linked yet." : view.filter === "unlinked" ? "Every recurring meeting is linked." : "No recurring meetings found."
+    color: view.panel.dim
+    font.family: view.panel.font
+    font.pixelSize: Style.font.body
   }
 
   Column {
@@ -114,7 +130,7 @@ Column {
           id: picker
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          width: Style.space(280)
+          width: view.pickerW
           showLabel: false
           fontFamily: view.panel.font
           options: view.projectOptions
