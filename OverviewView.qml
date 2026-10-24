@@ -46,16 +46,41 @@ Column {
   function money(v) { return Model.fmtMoney(v, currency) }
   function pct(a, b) { return b > 0 ? Math.round(a / b * 100) + "%" : "" }
 
-  function paceLine(p, actual, target, unit) {
-    if (target <= 0) return "Set a target in Admin to see your pace."
-    if (p.done) return "Finished at " + pct(actual, target) + " of target (" + (actual >= target ? "+" : "") + money(actual - target) + ")."
-    if (p.elapsed === 0) return "Starts " + (unit === "month" ? "this month" : "this year") + ": " + money(target / Math.max(1, p.total)) + " per work day reaches the target."
+  // Two plain sentences: where the current pace ends up, and what it takes
+  // to still reach the target. `unit` is "month" or "year".
+  function forecast(p, actual, target, unit) {
+    if (target <= 0) return "Set a " + (unit === "month" ? "monthly" : "yearly") + " target in Admin to see whether you're on track."
+    if (p.done) {
+      var end = actual - target
+      return "Ended at " + money(actual) + ", " + pct(actual, target) + " of the target ("
+           + (end >= 0 ? money(end) + " above" : money(-end) + " short") + ")."
+    }
+    if (p.elapsed === 0) return "This " + unit + " hasn't started yet."
+    if (actual >= target) return "Target reached: " + money(actual) + " so far, " + money(actual - target) + " above the target."
     var diff = p.projected - target
-    return "At this pace: " + money(p.projected) + " (" + (diff >= 0 ? "+" : "") + money(diff) + ")"
-         + (p.remaining > 0 && actual < target ? " · need " + money(p.neededPerDay) + " per work day for the " + p.remaining + " left" : "")
+    return "At your current pace you'll end the " + unit + " at " + money(p.projected) + ", "
+         + (diff >= 0 ? money(diff) + " above" : money(-diff) + " short of") + " the target."
+  }
+
+  function needed(p, actual, target) {
+    if (target <= 0 || p.done || actual >= target || p.remaining <= 0) return ""
+    return "To reach " + money(target) + ", bill " + money(p.neededPerDay) + " per work day for the "
+         + p.remaining + (p.remaining === 1 ? " work day" : " work days") + " left."
+  }
+
+  function behind(p, actual, target) {
+    return target > 0 && !p.done && p.elapsed > 0 && actual < target && p.projected < target
   }
 
   spacing: Style.spacing.lg
+
+  component ColumnHeader: Text {
+    horizontalAlignment: Text.AlignRight
+    color: view.panel.dim
+    font.family: view.panel.font
+    font.pixelSize: Style.font.caption
+    font.bold: true
+  }
 
   // ---- Month navigation ----
   Row {
@@ -75,7 +100,7 @@ Column {
     Button { text: "›"; fontFamily: view.panel.font; onClicked: view.month = Model.addMonths(view.month, 1) }
     Button {
       visible: view.month !== Model.monthKey(view.today)
-      text: "This month"
+      text: "Back to this month"
       fontFamily: view.panel.font
       onClicked: view.month = Model.monthKey(view.today)
     }
@@ -122,8 +147,17 @@ Column {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: view.paceLine(view.mPace, view.mTotals.income, view.mTarget, "month")
-      color: view.mTarget > 0 && !view.mPace.done && view.mPace.projected < view.mTarget ? view.panel.urgent : view.panel.dim
+      text: view.forecast(view.mPace, view.mTotals.income, view.mTarget, "month")
+      color: view.behind(view.mPace, view.mTotals.income, view.mTarget) ? view.panel.urgent : view.panel.fg
+      font.family: view.panel.font
+      font.pixelSize: Style.font.body
+    }
+    Text {
+      visible: text !== ""
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: view.needed(view.mPace, view.mTotals.income, view.mTarget)
+      color: view.panel.dim
       font.family: view.panel.font
       font.pixelSize: Style.font.body
     }
@@ -167,8 +201,17 @@ Column {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: view.paceLine(view.yPace, view.yTotals.income, view.yTarget, "year")
-      color: view.yTarget > 0 && !view.yPace.done && view.yPace.projected < view.yTarget ? view.panel.urgent : view.panel.dim
+      text: view.forecast(view.yPace, view.yTotals.income, view.yTarget, "year")
+      color: view.behind(view.yPace, view.yTotals.income, view.yTarget) ? view.panel.urgent : view.panel.fg
+      font.family: view.panel.font
+      font.pixelSize: Style.font.body
+    }
+    Text {
+      visible: text !== ""
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: view.needed(view.yPace, view.yTotals.income, view.yTarget)
+      color: view.panel.dim
       font.family: view.panel.font
       font.pixelSize: Style.font.body
     }
@@ -177,6 +220,7 @@ Column {
     Item {
       id: chart
       width: parent.width
+      clip: true
       height: Style.space(90)
       readonly property real colW: width / 12
       readonly property real plotH: height - Style.space(16)
@@ -218,13 +262,17 @@ Column {
         }
       }
 
-      Rectangle {
+      // Monthly target, dashed so it reads as a reference line, not a bar.
+      Row {
         visible: view.mTarget > 0
-        width: parent.width
-        height: 1
         y: chart.plotH - chart.plotH * view.mTarget / view.chartMax
-        color: view.panel.fg
-        opacity: 0.35
+        spacing: Style.space(4)
+        opacity: 0.5
+
+        Repeater {
+          model: Math.ceil(chart.width / Style.space(10))
+          delegate: Rectangle { width: Style.space(6); height: 1; color: view.panel.fg }
+        }
       }
     }
   }
@@ -237,6 +285,13 @@ Column {
   Column {
     width: parent.width
     spacing: Style.spacing.xs
+
+    Row {
+      Item { width: view.width - view.hoursW - view.incomeW - view.budgetW; height: 1 }
+      ColumnHeader { width: view.hoursW; text: "Hours" }
+      ColumnHeader { width: view.incomeW; text: "Income" }
+      ColumnHeader { width: view.budgetW; text: "Budget used (all time)" }
+    }
 
     Repeater {
       model: view.db.customers.slice().sort(function(a, b) { return a.name.localeCompare(b.name) })
@@ -336,8 +391,8 @@ Column {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: !prow.budget ? "" : (prow.budget.type === "hours"
-                        ? Math.round(prow.budget.used) + " / " + prow.budget.budget + " h"
-                        : Model.fmtMoneyShort(prow.budget.used, view.currency) + " / " + Model.fmtMoneyShort(prow.budget.budget, view.currency))
+                        ? Math.round(prow.budget.used) + " of " + prow.budget.budget + " h"
+                        : Model.fmtMoneyShort(prow.budget.used, view.currency) + " of " + Model.fmtMoneyShort(prow.budget.budget, view.currency))
                 color: prow.budget && prow.budget.fraction > 0.9 ? view.panel.urgent : view.panel.dim
                 font.family: view.panel.font
                 font.pixelSize: Style.font.bodySmall
@@ -350,7 +405,7 @@ Column {
   }
 
   Text {
-    text: "Amounts excl. VAT. Budgets count all hours ever booked on the project."
+    text: "Amounts excl. VAT. Budget used counts every hour ever booked on the project, not just this month."
     color: view.panel.faint
     font.family: view.panel.font
     font.pixelSize: Style.font.caption
