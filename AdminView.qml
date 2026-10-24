@@ -26,9 +26,19 @@ Column {
   // Project list columns and the one item open for editing.
   readonly property int lineH: Style.space(28)
   readonly property int nameColW: Style.space(270)
-  readonly property int rateColW: Style.space(200)
-  readonly property int budgetColW: width - nameColW - rateColW - Style.space(60)
+  // Rate column and rate dropdown fit the longest rate, which the 32-character
+  // name limit keeps within reason.
+  readonly property int rateNameMax: 32
+  readonly property real widestRate: {
+    var w = 0
+    for (var i = 0; i < rateOptions.length; i++) w = Math.max(w, metrics.advanceWidth(rateOptions[i].label))
+    return w
+  }
+  readonly property int rateColW: Math.max(Style.space(160), Math.ceil(widestRate) + Style.space(24))
+  readonly property int ratePickerW: Math.max(pickerW, Math.ceil(widestRate) + Style.space(56))
+  readonly property int budgetColW: width - indent - nameColW - rateColW - Style.space(40)
   readonly property int editLabelW: Style.space(80)
+  readonly property int indent: Style.space(24)
   property string editingProject: ""
   property string editingCustomer: ""
   property bool showArchived: false
@@ -85,6 +95,12 @@ Column {
 
   spacing: Style.spacing.xl
 
+  FontMetrics {
+    id: metrics
+    font.family: view.panel ? view.panel.font : Style.font.family
+    font.pixelSize: Style.font.body
+  }
+
   component Label: Text {
     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
     color: view.panel.dim
@@ -123,6 +139,76 @@ Column {
     showLabel: false
     fontFamily: view.panel.font
     Connections { target: view.panel; function onScrolled() { picker.close() } }
+  }
+
+  // Every list ends in one of these.
+  component AddButton: Button {
+    fontFamily: view.panel.font
+    bordered: true
+  }
+
+  // Pencil at the right end of a hovered row; the whole row is clickable.
+  component EditHint: Text {
+    anchors.right: parent.right
+    anchors.rightMargin: Style.spacing.md
+    anchors.verticalCenter: parent.verticalCenter
+    text: "󰏫"
+    color: view.panel.dim
+    font.family: view.panel.font
+    font.pixelSize: Style.font.body
+  }
+
+  // Outline around an open editor; children stack in a padded column.
+  component EditBox: Rectangle {
+    id: box
+    default property alias content: inner.data
+    readonly property int innerWidth: width - 2 * Style.spacing.lg
+    height: inner.height
+    radius: Style.cornerRadius
+    color: "transparent"
+    border.width: 1
+    border.color: Qt.rgba(view.panel.fg.r, view.panel.fg.g, view.panel.fg.b, 0.25)
+
+    Column {
+      id: inner
+      x: Style.spacing.lg
+      width: box.innerWidth
+      topPadding: Style.spacing.lg
+      bottomPadding: Style.spacing.lg
+      spacing: Style.spacing.md
+    }
+  }
+
+  // Archive / Delete / Done, right-aligned on an editor's last row.
+  component EditActions: Row {
+    id: actions
+    property bool archived: false
+    property bool canDelete: false
+    signal archive()
+    signal remove()
+    signal done()
+
+    anchors.right: parent ? parent.right : undefined
+    anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+    spacing: Style.spacing.sm
+
+    Button {
+      text: actions.archived ? "Restore" : "Archive"
+      fontFamily: view.panel.font
+      onClicked: actions.archive()
+    }
+    Button {
+      visible: actions.canDelete
+      text: "Delete"
+      fontFamily: view.panel.font
+      onClicked: actions.remove()
+    }
+    Button {
+      text: "Done"
+      fontFamily: view.panel.font
+      bordered: true
+      onClicked: actions.done()
+    }
   }
 
   // ---- Targets ----
@@ -180,6 +266,7 @@ Column {
           width: Style.space(320)
           value: rrow.rate.name || ""
           placeholderText: "Name"
+          maximumLength: view.rateNameMax
           onCommit: view.service.updateItem("rates", rrow.rate.id, { name: text })
         }
         Field {
@@ -199,10 +286,8 @@ Column {
       }
     }
 
-    Button {
+    AddButton {
       text: "+ Add rate"
-      fontFamily: view.panel.font
-      bordered: true
       onClicked: view.service.addItem("rates", { id: Model.uid("r"), name: "Rate " + (view.db.rates.length + 1), amount: 0 })
     }
   }
@@ -216,29 +301,7 @@ Column {
     width: parent.width
     spacing: Style.spacing.md
 
-    Item {
-      width: parent.width
-      height: Style.spacing.controlHeight
-
-      PanelSectionHeader {
-        anchors.verticalCenter: parent.verticalCenter
-        text: "CUSTOMERS & PROJECTS"
-        foreground: view.panel.fg
-        fontFamily: view.panel.font
-      }
-      Button {
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        text: "+ Add customer"
-        fontFamily: view.panel.font
-        bordered: true
-        onClicked: {
-          var id = Model.uid("c")
-          view.service.addItem("customers", { id: id, name: "New customer", archived: false })
-          view.editingCustomer = id
-        }
-      }
-    }
+    PanelSectionHeader { text: "CUSTOMERS & PROJECTS"; foreground: view.panel.fg; fontFamily: view.panel.font }
 
     Text {
       visible: view.db.rates.length === 0
@@ -261,86 +324,71 @@ Column {
         spacing: Style.spacing.xxs
         topPadding: index > 0 ? Style.spacing.md : 0
 
-        // Customer header, or its editor.
-        Item {
+        // Customer name, or its editor.
+        Rectangle {
+          visible: !cblock.editing
           width: parent.width
-          height: Style.spacing.controlHeight
+          height: view.lineH
+          radius: Style.cornerRadius
+          color: customerMouse.containsMouse ? Style.hoverFill : "transparent"
 
           Text {
-            visible: !cblock.editing
+            x: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
-            text: (cblock.customer.name || "").toUpperCase() + (cblock.customer.archived ? "  (archived)" : "")
+            text: (cblock.customer.name || "") + (cblock.customer.archived ? "  (archived)" : "")
             textFormat: Text.PlainText
-            color: view.panel.dim
-            opacity: cblock.customer.archived ? 0.6 : 1
+            color: view.panel.fg
+            opacity: cblock.customer.archived ? 0.55 : 1
             font.family: view.panel.font
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.body
             font.bold: true
           }
+          EditHint { visible: customerMouse.containsMouse }
 
-          Row {
-            visible: cblock.editing
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.spacing.md
-
-            Field {
-              width: Style.space(320)
-              value: cblock.customer.name || ""
-              placeholderText: "Customer name"
-              onCommit: view.service.updateItem("customers", cblock.customer.id, { name: text })
-              onVisibleChanged: if (visible) { forceActiveFocus(); selectAll() }
-            }
-            Button {
-              text: cblock.customer.archived ? "Restore" : "Archive"
-              fontFamily: view.panel.font
-              onClicked: {
-                view.service.updateItem("customers", cblock.customer.id, { archived: !cblock.customer.archived })
-                view.editingCustomer = ""
-              }
-            }
-            Button {
-              visible: cblock.projects.length === 0 && !view.customerInUse(cblock.customer.id)
-              text: "Delete"
-              fontFamily: view.panel.font
-              onClicked: view.service.removeItem("customers", cblock.customer.id)
-            }
-          }
-
-          Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.spacing.sm
-
-            Button {
-              iconText: cblock.editing ? "󰄬" : "󰏫"
-              tooltipText: cblock.editing ? "Done" : "Rename or archive customer"
-              fontFamily: view.panel.font
-              horizontalPadding: Style.spacing.sm
-              onClicked: view.editingCustomer = cblock.editing ? "" : cblock.customer.id
-            }
-            Button {
-              visible: !cblock.customer.archived && view.db.rates.length > 0
-              text: "+ project"
-              fontFamily: view.panel.font
-              onClicked: {
-                var id = Model.uid("p")
-                view.service.addItem("projects", {
-                  id: id, customerId: cblock.customer.id, name: "New project",
-                  rateId: view.db.rates[0].id, billable: true, budgetType: "none", budget: 0, archived: false
-                })
-                view.editingProject = id
-              }
-            }
+          MouseArea {
+            id: customerMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { view.editingProject = ""; view.editingCustomer = cblock.customer.id }
           }
         }
 
-        Text {
-          visible: cblock.projects.length === 0 && !cblock.customer.archived
-          leftPadding: Style.spacing.lg
-          text: "No projects yet"
-          color: view.panel.faint
-          font.family: view.panel.font
-          font.pixelSize: Style.font.body
+        EditBox {
+          visible: cblock.editing
+          width: parent.width
+
+          Item {
+            width: parent.width
+            height: Style.spacing.controlHeight
+
+            Row {
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.md
+              Label { text: "Customer"; width: view.editLabelW }
+              Field {
+                width: Style.space(320)
+                value: cblock.customer.name || ""
+                placeholderText: "Customer name"
+                onCommit: view.service.updateItem("customers", cblock.customer.id, { name: text })
+                onVisibleChanged: if (visible && cblock.customer.name === "New customer") { forceActiveFocus(); selectAll() }
+              }
+            }
+
+            EditActions {
+              archived: !!cblock.customer.archived
+              canDelete: !view.customerInUse(cblock.customer.id)
+              onArchive: {
+                view.service.updateItem("customers", cblock.customer.id, { archived: !cblock.customer.archived })
+                view.editingCustomer = ""
+              }
+              onRemove: {
+                view.service.removeItem("customers", cblock.customer.id)
+                view.editingCustomer = ""
+              }
+              onDone: view.editingCustomer = ""
+            }
+          }
         }
 
         Repeater {
@@ -364,7 +412,7 @@ Column {
 
               Row {
                 anchors.verticalCenter: parent.verticalCenter
-                x: Style.spacing.lg
+                x: view.indent
 
                 Text {
                   width: view.nameColW
@@ -394,148 +442,140 @@ Column {
                 }
               }
 
-              Text {
-                anchors.right: parent.right
-                anchors.rightMargin: Style.spacing.lg
-                anchors.verticalCenter: parent.verticalCenter
-                text: "›"
-                color: lineMouse.containsMouse ? view.panel.fg : view.panel.faint
-                font.family: view.panel.font
-                font.pixelSize: Style.font.title
-              }
+              EditHint { visible: lineMouse.containsMouse }
 
               MouseArea {
                 id: lineMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: view.editingProject = prow.project.id
+                onClicked: { view.editingCustomer = ""; view.editingProject = prow.project.id }
               }
             }
 
             // Editor
-            Rectangle {
+            EditBox {
+              id: editor
               visible: prow.editing
               y: Style.spacing.xs
               width: parent.width
-              height: editor.height
-              radius: Style.cornerRadius
-              color: "transparent"
-              border.width: 1
-              border.color: Qt.rgba(view.panel.fg.r, view.panel.fg.g, view.panel.fg.b, 0.25)
 
-              Column {
-                id: editor
-                x: Style.spacing.lg
-                width: parent.width - 2 * Style.spacing.lg
-                topPadding: Style.spacing.lg
-                bottomPadding: Style.spacing.lg
+              Row {
                 spacing: Style.spacing.md
+                Label { text: "Name"; width: view.editLabelW }
+                Field {
+                  width: editor.innerWidth - view.editLabelW - view.ratePickerW - Style.space(50) - 3 * Style.spacing.md
+                  value: prow.project.name || ""
+                  placeholderText: "Project name"
+                  onCommit: view.service.updateItem("projects", prow.project.id, { name: text })
+                  onVisibleChanged: if (visible && prow.project.name === "New project") { forceActiveFocus(); selectAll() }
+                }
+                Label { text: "Rate"; width: Style.space(50) }
+                Picker {
+                  width: view.ratePickerW
+                  options: view.rateOptions
+                  value: prow.project.rateId || ""
+                  onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { rateId: v }) }
+                }
+              }
+
+              Row {
+                spacing: Style.spacing.md
+                Label { text: "Budget"; width: view.editLabelW }
+                ButtonGroup {
+                  anchors.verticalCenter: parent.verticalCenter
+                  fontFamily: view.panel.font
+                  options: view.budgetOptions
+                  value: prow.project.budgetType || "none"
+                  onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { budgetType: v }) }
+                }
+                Field {
+                  visible: (prow.project.budgetType || "none") !== "none"
+                  width: Style.space(110)
+                  value: String(prow.project.budget || "")
+                  placeholderText: prow.project.budgetType === "hours" ? "hours" : "amount"
+                  validator: DoubleValidator { bottom: 0 }
+                  onCommit: view.service.updateItem("projects", prow.project.id, { budget: view.num(text) })
+                }
+                Item { width: Style.spacing.xl; height: 1 }
+                ToggleSwitch {
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: prow.project.billable !== false
+                  onToggled: view.service.updateItem("projects", prow.project.id, { billable: prow.project.billable === false })
+                }
+                Label { text: prow.project.billable !== false ? "Billable" : "Internal" }
+              }
+
+              Item {
+                width: editor.innerWidth
+                height: Style.spacing.controlHeight
 
                 Row {
+                  anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.spacing.md
-                  Label { text: "Name"; width: view.editLabelW }
-                  Field {
-                    width: editor.width - view.editLabelW - view.pickerW - Style.space(50) - 3 * Style.spacing.md
-                    value: prow.project.name || ""
-                    placeholderText: "Project name"
-                    onCommit: view.service.updateItem("projects", prow.project.id, { name: text })
-                    onVisibleChanged: if (visible && prow.project.name === "New project") { forceActiveFocus(); selectAll() }
-                  }
-                  Label { text: "Rate"; width: Style.space(50) }
+                  Label { text: "Customer"; width: view.editLabelW }
                   Picker {
                     width: view.pickerW
-                    options: view.rateOptions
-                    value: prow.project.rateId || ""
-                    onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { rateId: v }) }
+                    options: view.customerOptions
+                    value: prow.project.customerId || ""
+                    onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { customerId: v }) }
                   }
                 }
 
-                Row {
-                  spacing: Style.spacing.md
-                  Label { text: "Budget"; width: view.editLabelW }
-                  ButtonGroup {
-                    anchors.verticalCenter: parent.verticalCenter
-                    fontFamily: view.panel.font
-                    options: view.budgetOptions
-                    value: prow.project.budgetType || "none"
-                    onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { budgetType: v }) }
+                EditActions {
+                  archived: !!prow.project.archived
+                  canDelete: !view.service.projectHasHours(prow.project.id)
+                  onArchive: {
+                    view.service.updateItem("projects", prow.project.id, { archived: !prow.project.archived })
+                    view.editingProject = ""
                   }
-                  Field {
-                    visible: (prow.project.budgetType || "none") !== "none"
-                    width: Style.space(110)
-                    value: String(prow.project.budget || "")
-                    placeholderText: prow.project.budgetType === "hours" ? "hours" : "amount"
-                    validator: DoubleValidator { bottom: 0 }
-                    onCommit: view.service.updateItem("projects", prow.project.id, { budget: view.num(text) })
+                  onRemove: {
+                    view.service.removeItem("projects", prow.project.id)
+                    view.editingProject = ""
                   }
-                  Item { width: Style.spacing.xl; height: 1 }
-                  ToggleSwitch {
-                    anchors.verticalCenter: parent.verticalCenter
-                    checked: prow.project.billable !== false
-                    onToggled: view.service.updateItem("projects", prow.project.id, { billable: prow.project.billable === false })
-                  }
-                  Label { text: prow.project.billable !== false ? "Billable" : "Internal" }
-                }
-
-                Item {
-                  width: editor.width
-                  height: Style.spacing.controlHeight
-
-                  Row {
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Style.spacing.md
-                    Label { text: "Customer"; width: view.editLabelW }
-                    Picker {
-                      width: view.pickerW
-                      options: view.customerOptions
-                      value: prow.project.customerId || ""
-                      onChanged: function(v) { view.service.updateItem("projects", prow.project.id, { customerId: v }) }
-                    }
-                  }
-
-                  Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Style.spacing.sm
-
-                    Button {
-                      text: prow.project.archived ? "Restore" : "Archive"
-                      fontFamily: view.panel.font
-                      onClicked: {
-                        view.service.updateItem("projects", prow.project.id, { archived: !prow.project.archived })
-                        view.editingProject = ""
-                      }
-                    }
-                    Button {
-                      visible: !view.service.projectHasHours(prow.project.id)
-                      text: "Delete"
-                      fontFamily: view.panel.font
-                      onClicked: {
-                        view.service.removeItem("projects", prow.project.id)
-                        view.editingProject = ""
-                      }
-                    }
-                    Button {
-                      text: "Done"
-                      fontFamily: view.panel.font
-                      bordered: true
-                      onClicked: view.editingProject = ""
-                    }
-                  }
+                  onDone: view.editingProject = ""
                 }
               }
             }
           }
         }
+
+        AddButton {
+          visible: !cblock.customer.archived && view.db.rates.length > 0
+          x: view.indent
+          text: "+ Add project"
+          onClicked: {
+            var id = Model.uid("p")
+            view.service.addItem("projects", {
+              id: id, customerId: cblock.customer.id, name: "New project",
+              rateId: view.db.rates[0].id, billable: true, budgetType: "none", budget: 0, archived: false
+            })
+            view.editingCustomer = ""
+            view.editingProject = id
+          }
+        }
       }
     }
 
-    Button {
-      visible: view.archivedCount > 0
-      text: (view.showArchived ? "▾ Hide archived" : "▸ " + view.archivedCount + " archived")
-      fontFamily: view.panel.font
-      onClicked: view.showArchived = !view.showArchived
+    Row {
+      spacing: Style.spacing.md
+      topPadding: Style.spacing.md
+
+      AddButton {
+        text: "+ Add customer"
+        onClicked: {
+          var id = Model.uid("c")
+          view.service.addItem("customers", { id: id, name: "New customer", archived: false })
+          view.editingProject = ""
+          view.editingCustomer = id
+        }
+      }
+      Button {
+        visible: view.archivedCount > 0
+        text: view.showArchived ? "Hide archived" : "Show " + view.archivedCount + " archived"
+        fontFamily: view.panel.font
+        onClicked: view.showArchived = !view.showArchived
+      }
     }
   }
 
