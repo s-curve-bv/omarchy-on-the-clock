@@ -25,7 +25,8 @@ restarts the last project.
   ended it shows up in Week, where you book it or mark that it didn't happen.
   Declined and cancelled meetings are skipped.
 - **Admin**: income targets, hourly rates, customers and projects (rate,
-  billable or internal, optional budget in hours or money), and settings.
+  billable or internal, optional budget in hours or money), settings and
+  backup.
 
 While a timer runs, no keyboard or mouse input for 10 minutes (configurable)
 triggers a notification and a prompt to keep or discard that idle time.
@@ -45,8 +46,16 @@ The cache path can be changed in Admin.
 
 Everything lives in one JSON file, `~/.local/share/on-the-clock/hours.json`.
 The plugin picks up changes made to it outside the panel, and won't overwrite
-it if it stops being valid JSON. Back it up like any other file, for example by
-making that folder a private git repository.
+it if it stops being valid JSON.
+
+### Backup
+
+Turn on **Git history** under Admin → Backup and the data folder becomes a git
+repository: a few minutes after you change something, the plugin commits
+`hours.json`. Add a remote (a **private** repository, since this is your
+income) and every commit is pushed as well. Pushing uses your normal git
+credentials, so an SSH key or `gh auth setup-git` needs to be in place.
+An existing `origin` in the folder is used when the remote field is empty.
 
 ## Commands
 
@@ -56,6 +65,7 @@ For keybindings or scripts:
     omarchy-shell ontheclock start <name>    # matches part of "Customer · Project"
     omarchy-shell ontheclock stop
     omarchy-shell ontheclock status
+    omarchy-shell ontheclock backup          # commit and push now
     omarchy-shell shell toggle s-curve.on-the-clock '{}'   # open/close the panel
 
 ## Development

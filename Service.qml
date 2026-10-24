@@ -55,6 +55,7 @@ Item {
     if (!loaded || corrupt) return
     lastWritten = JSON.stringify(db, null, 2) + "\n"
     store.setText(lastWritten)
+    if (db.settings.backup) backupDelay.restart()
   }
 
   // All writes go through here: copy, change, publish, persist.
@@ -204,6 +205,46 @@ Item {
     return false
   }
 
+  // ---- Backup ----
+  // backup.sh commits hours.json in the data folder (a git repository) and
+  // pushes it when there is a remote. It runs a few minutes after the last
+  // change, so a burst of edits becomes one commit, and once at startup to
+  // push anything a previous run could not.
+  property bool backupRunning: false
+  property real backupAt: 0
+  property string backupResult: ""
+  property bool backupFailed: false
+
+  function backupNow() {
+    if (!db.settings.backup) return
+    if (backupRunning) { backupDelay.restart(); return }
+    backupDelay.stop()
+    backupRunning = true
+    backupProc.command = ["bash", Qt.resolvedUrl("backup.sh").toString().replace(/^file:\/\//, ""),
+                          dataDir, String(db.settings.backupRemote || "")]
+    backupProc.running = true
+  }
+
+  Timer {
+    id: backupDelay
+    interval: 180000
+    onTriggered: root.backupNow()
+  }
+
+  Process {
+    id: backupProc
+    stdout: StdioCollector { id: backupOut; waitForEnd: true }
+    stderr: StdioCollector { id: backupErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.backupRunning = false
+      root.backupAt = Date.now()
+      root.backupFailed = exitCode !== 0
+      var out = (exitCode === 0 ? backupOut.text : backupErr.text || backupOut.text).trim().split("\n")
+      root.backupResult = out[out.length - 1] || (exitCode === 0 ? "done" : "failed with code " + exitCode)
+      if (root.backupFailed) console.warn("on-the-clock: backup failed: " + root.backupResult)
+    }
+  }
+
   // ---- Files ----
   FileView {
     id: store
@@ -228,6 +269,7 @@ Item {
       if (first) {
         if (parsed.timer && parsed.timer.idleFrom) root.resolveIdle()
         root.mutate(function(d) { Model.pruneDecided(d, Date.now()) })
+        Qt.callLater(root.backupNow)
       }
     }
     onLoadFailed: function(error) {
@@ -277,7 +319,7 @@ Item {
 
   Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.dataDir])
 
-  // omarchy-shell ontheclock toggle | start <project> | stop | status
+  // omarchy-shell ontheclock toggle | start <project> | stop | status | backup
   IpcHandler {
     target: "ontheclock"
 
@@ -302,6 +344,12 @@ Item {
       if (!hit) return "no project matches " + query
       root.startTimer(hit.id)
       return "running " + root.projectLabel(hit)
+    }
+
+    function backup(): string {
+      if (!root.db.settings.backup) return "backup is off; turn it on in Admin"
+      root.backupNow()
+      return "backup started"
     }
 
     function status(): string {

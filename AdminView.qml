@@ -361,4 +361,58 @@ Column {
       font.pixelSize: Style.font.caption
     }
   }
+
+  PanelSeparator { width: view.width; foreground: view.panel.fg }
+
+  // ---- Backup ----
+  Column {
+    width: parent.width
+    spacing: Style.spacing.md
+
+    PanelSectionHeader { text: "BACKUP"; foreground: view.panel.fg; fontFamily: view.panel.font }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Git history"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.backup
+        onToggled: {
+          view.service.setSetting("backup", !view.db.settings.backup)
+          if (view.db.settings.backup) view.service.backupNow()
+        }
+      }
+      Label { text: "commit the data file a few minutes after each change" }
+    }
+
+    Row {
+      visible: !!view.db.settings.backup
+      spacing: Style.spacing.lg
+      Label { text: "Remote"; width: view.labelW }
+      Field {
+        width: Style.space(420)
+        value: view.db.settings.backupRemote || ""
+        placeholderText: "git@github.com:you/hours-data.git (optional, keep it private)"
+        onCommit: view.service.setSetting("backupRemote", text.trim())
+      }
+    }
+
+    Row {
+      visible: !!view.db.settings.backup
+      spacing: Style.spacing.lg
+      Item { width: view.labelW; height: 1 }
+      Button {
+        text: view.service && view.service.backupRunning ? "Backing up…" : "Back up now"
+        fontFamily: view.panel.font
+        onClicked: view.service.backupNow()
+      }
+      Label {
+        text: !view.service || !view.service.backupAt ? ""
+            : Qt.formatDateTime(new Date(view.service.backupAt), "HH:mm") + " · " + view.service.backupResult
+        color: view.service && view.service.backupFailed ? view.panel.urgent : view.panel.dim
+        elide: Text.ElideRight
+        width: Style.space(330)
+      }
+    }
+  }
 }

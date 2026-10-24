@@ -10,7 +10,8 @@
 //   targets:   { month, year }                      income, excl. VAT
 //   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to} }
 //   calendar:  { links: { seriesId: projectId }, decided: { uid: "confirmed" | "dismissed" } }
-//   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache, lookbackDays }
+//   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache, lookbackDays,
+//                backup, backupRemote }                git history of hours.json
 
 var QUARTER = 15
 
@@ -116,7 +117,9 @@ function defaults() {
       idleMinutes: 10,
       workDays: [1, 2, 3, 4, 5],
       calendarCache: "~/.cache/blacksheep.calendar/events.json",
-      lookbackDays: 31
+      lookbackDays: 31,
+      backup: false,
+      backupRemote: ""
     }
   }
 }
