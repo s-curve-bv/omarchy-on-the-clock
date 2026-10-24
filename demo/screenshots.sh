@@ -15,6 +15,7 @@ work=$(mktemp -d)
 
 restore() {
   cp "$work/Panel.qml" "$here/Panel.qml"
+  cp "$work/AdminView.qml" "$here/AdminView.qml"
   if [[ -f $work/hours.json ]]; then
     cp "$work/hours.json" "$data"
     cmp -s "$work/hours.json" "$data" && echo "your data is back" || echo "RESTORE FAILED: your data is in $work/hours.json"
@@ -27,17 +28,22 @@ node "$here/demo/make-demo.js"
 mkdir -p "$(dirname "$cache")" "$here/screenshots"
 cp "$here/demo/out/events.json" "$cache"
 cp "$here/Panel.qml" "$work/Panel.qml"
-[[ -f $data ]] && cp "$data" "$work/hours.json"
+cp "$here/AdminView.qml" "$work/AdminView.qml"
+if [[ -f $data ]]; then cp "$data" "$work/hours.json"; fi
 cp "$here/demo/out/hours.json" "$data"
 
 output=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
 
-# shot <name> <tab> [bottom]
+# shot <name> <tab> [bottom | edit]
 shot() {
   cp "$work/Panel.qml" "$here/Panel.qml"
+  cp "$work/AdminView.qml" "$here/AdminView.qml"
   sed -i "s/property string tab: \"week\"/property string tab: \"$2\"/" "$here/Panel.qml"
   if [[ ${3:-} == bottom ]]; then
     sed -i 's/^\( *\)onContentYChanged: root.scrolled()$/&\n\1Timer { interval: 300; running: true; repeat: true; onTriggered: scroller.contentY = Math.max(0, scroller.contentHeight - scroller.height) }/' "$here/Panel.qml"
+  fi
+  if [[ ${3:-} == edit ]]; then
+    sed -i 's/property string editingProject: ""/property string editingProject: "p2"/' "$here/AdminView.qml"
   fi
   omarchy-restart-shell >/dev/null 2>&1
   sleep 5
@@ -55,5 +61,6 @@ shot week week
 shot overview overview
 shot calendar calendar
 shot admin admin
+shot admin-edit admin edit
 shot admin-settings admin bottom
 cp "$here/screenshots/overview.png" "$here/preview.png"
