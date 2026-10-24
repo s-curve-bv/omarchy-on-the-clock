@@ -21,6 +21,8 @@ jobs:
       - run: node --test tests/test_model.js
       - name: Demo data still generates
         run: node demo/make-demo.js
+      - name: Backup refuses demo data
+        run: bash tests/test_backup.sh
 
   validate:
     name: Omarchy manifest
@@ -42,4 +44,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck backup.sh demo/screenshots.sh
+      - run: shellcheck backup.sh demo/screenshots.sh tests/test_backup.sh

@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import "Model.js" as Model
+import "Demo.js" as Demo
 
 // Owns hours.json, the running timer, idle detection and the calendar
 // suggestions. Mounted once by the shell; every bar instance (one per
@@ -14,7 +15,16 @@ Item {
   property var manifest: null
 
   readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/on-the-clock"
-  readonly property string dataPath: dataDir + "/hours.json"
+  readonly property string realPath: dataDir + "/hours.json"
+
+  // Demo mode swaps in fictional data from Demo.js, kept in its own folder
+  // outside the data repository, with backups off. It is never remembered:
+  // every shell start begins on the real file.
+  property bool demo: false
+  // Hides the demo banner, for screenshots.
+  property bool demoQuiet: false
+  readonly property string demoDir: Quickshell.env("HOME") + "/.cache/on-the-clock-demo"
+  readonly property string dataPath: demo ? demoDir + "/hours.json" : realPath
 
   property var db: Model.defaults()
   property bool loaded: false
@@ -53,9 +63,14 @@ Item {
 
   function save() {
     if (!loaded || corrupt) return
+    // Demo data only ever goes to the demo file.
+    if (!!db.settings.demo !== demo) {
+      console.warn("on-the-clock: refusing to save " + (demo ? "real" : "demo") + " data to " + dataPath)
+      return
+    }
     lastWritten = JSON.stringify(db, null, 2) + "\n"
     store.setText(lastWritten)
-    if (db.settings.backup) backupDelay.restart()
+    if (db.settings.backup && !demo) backupDelay.restart()
   }
 
   // All writes go through here: copy, change, publish, persist.
@@ -216,7 +231,7 @@ Item {
   property bool backupFailed: false
 
   function backupNow() {
-    if (!db.settings.backup) return
+    if (!db.settings.backup || demo) return
     if (backupRunning) { backupDelay.restart(); return }
     backupDelay.stop()
     backupRunning = true
@@ -247,6 +262,25 @@ Item {
       if (m && !root.db.settings.backupRemote) root.setSetting("backupRemote", m[1])
     }
   }
+
+  // ---- Demo mode ----
+  // Writes fresh demo files, then points the store at them; the store's
+  // reload does the rest, exactly as on startup.
+  function setDemo(on) {
+    if (on === demo) return
+    backupDelay.stop()
+    if (on) {
+      var built = Demo.build(Model, today, "~/.cache/on-the-clock-demo/events.json")
+      demoEvents.setText(JSON.stringify({ events: built.events }) + "\n")
+      demoHours.setText(JSON.stringify(built.hours, null, 2) + "\n")
+    }
+    loaded = false
+    lastWritten = ""
+    demo = on
+  }
+
+  FileView { id: demoHours; path: root.demoDir + "/hours.json"; blockWrites: true; printErrors: false }
+  FileView { id: demoEvents; path: root.demoDir + "/events.json"; blockWrites: true; printErrors: false }
 
   // ---- Files ----
   FileView {
@@ -320,9 +354,9 @@ Item {
     onTriggered: root.calendarNow = Date.now()
   }
 
-  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.dataDir])
+  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.dataDir, root.demoDir])
 
-  // omarchy-shell ontheclock toggle | start <project> | stop | status | backup
+  // omarchy-shell ontheclock toggle | start <project> | stop | status | backup | demo [on|off]
   IpcHandler {
     target: "ontheclock"
 
@@ -353,6 +387,13 @@ Item {
       if (!root.db.settings.backup) return "backup is off; turn it on in Admin"
       root.backupNow()
       return "backup started"
+    }
+
+    // on | off | toggle | quiet (on, without the banner; for screenshots)
+    function demo(state: string): string {
+      root.demoQuiet = state === "quiet"
+      root.setDemo(state === "on" || state === "quiet" ? true : state === "off" ? false : !root.demo)
+      return root.demo ? "demo data" : "real data"
     }
 
     function status(): string {

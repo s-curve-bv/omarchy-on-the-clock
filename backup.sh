@@ -11,6 +11,13 @@ export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -oBatchMode=yes}"
 cd "$1"
 remote="${2:-}"
 
+# Never touch anything holding demo data (Demo.js marks it), whatever the
+# caller thinks; checked before git runs at all.
+if jq -e '.settings.demo == true' hours.json >/dev/null 2>&1; then
+  echo "refusing to back up demo data" >&2
+  exit 1
+fi
+
 [[ -d .git ]] || git init -q -b main
 if ! git config user.email >/dev/null; then
   git config user.name "On the Clock"

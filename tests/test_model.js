@@ -124,3 +124,14 @@ test("normalize fills defaults", () => {
   assert.equal(d.timer, null);
   assert.equal(Model.parse("{oops"), null);
 });
+
+test("demo data is marked and survives a save round trip", () => {
+  const Demo = require("../Demo.js");
+  const demo = Demo.build(Model, "2026-10-24", "~/.cache/on-the-clock-demo/events.json");
+  assert.equal(demo.hours.settings.demo, true);
+  assert.equal(demo.hours.settings.backup, false);
+  // The marker must survive load/normalize, or the guards would not see it.
+  assert.equal(Model.parse(JSON.stringify(demo.hours)).settings.demo, true);
+  assert.equal(Model.defaults().settings.demo, undefined);
+  assert.equal(Model.suggestions(demo.hours, demo.events, Date.parse("2026-10-24T14:00:00")).length, 2);
+});

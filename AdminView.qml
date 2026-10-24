@@ -582,11 +582,26 @@ Column {
       }
     }
 
+    // Five quick clicks on this line switch between your data and demo data.
     Text {
       text: "Data: " + (view.service ? view.service.dataPath.replace(Quickshell.env("HOME"), "~") : "")
       color: view.panel.faint
       font.family: view.panel.font
       font.pixelSize: Style.font.caption
+
+      property int clicks: 0
+      property real firstClick: 0
+      MouseArea {
+        anchors.fill: parent
+        onClicked: {
+          var t = Date.now()
+          if (t - parent.firstClick > 2000) { parent.firstClick = t; parent.clicks = 0 }
+          if (++parent.clicks >= 5) {
+            parent.clicks = 0
+            view.service.setDemo(!view.service.demo)
+          }
+        }
+      }
     }
   }
 

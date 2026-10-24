@@ -188,6 +188,33 @@ Panel {
           }
 
           // ---- Banners ----
+          Rectangle {
+            visible: !!(root.service && root.service.demo && !root.service.demoQuiet)
+            width: parent.width
+            height: Style.spacing.controlHeight + Style.spacing.md * 2
+            radius: Style.cornerRadius
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.lg
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Demo data: fictional customers and hours. Your own file is untouched."
+              color: root.fg
+              font.family: root.font
+              font.pixelSize: Style.font.body
+            }
+            Button {
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Back to my data"
+              fontFamily: root.font
+              bordered: true
+              onClicked: root.service.setDemo(false)
+            }
+          }
+
           Text {
             visible: !!(root.service && root.service.corrupt)
             width: parent.width
