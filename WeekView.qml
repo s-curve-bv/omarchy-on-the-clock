@@ -49,7 +49,8 @@ Column {
   readonly property var weekTotals: Model.totals(db, days[0], days[6])
 
   // Keyboard cursor: a project row and a day. Space starts or stops the
-  // project's timer, + and - change the hours in that cell.
+  // project's timer, Enter makes it the bar's project, + and - change the
+  // hours in that cell.
   property string cursorId: ""
   property string cursorDay: today
   readonly property var cursorProject: Model.byId(db.projects, cursorId)
@@ -90,6 +91,29 @@ Column {
   function addToCursor(minutes) {
     if (!cursorId || !service || days.indexOf(cursorDay) === -1) return
     service.addMinutes(cursorDay, cursorId, minutes)
+  }
+
+  // Enter makes the cursor's project the one the bar offers to start.
+  function selectCursor() {
+    if (cursorId && service) service.selectProject(cursorId)
+  }
+
+  // Keys for the grid, called by Panel.qml. Shift steps a whole hour; on
+  // a US layout shift+= arrives as Key_Plus and shift+- as Key_Underscore.
+  // Returns whether the key was used.
+  function handleKey(key, modifiers) {
+    var hour = !!(modifiers & Qt.ShiftModifier)
+    if (key === Qt.Key_Up || key === Qt.Key_K) moveCursor(-1)
+    else if (key === Qt.Key_Down || key === Qt.Key_J) moveCursor(1)
+    else if (key === Qt.Key_Left || key === Qt.Key_H) moveDay(-1)
+    else if (key === Qt.Key_Right || key === Qt.Key_L) moveDay(1)
+    else if (key === Qt.Key_Plus || key === Qt.Key_Equal) addToCursor(hour ? 60 : 15)
+    else if (key === Qt.Key_Minus || key === Qt.Key_Underscore) addToCursor(hour || key === Qt.Key_Underscore ? -60 : -15)
+    else if (key === Qt.Key_Return || key === Qt.Key_Enter) selectCursor()
+    else if (key === Qt.Key_Space) toggleCursor()
+    else if (key === Qt.Key_N) focusNote()
+    else return false
+    return true
   }
 
   function dayTotal(key) {
@@ -532,7 +556,7 @@ Column {
   }
 
   Text {
-    text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · n note · space " + (view.isCurrentWeek ? "timer" : "back to this week")
+    text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · enter bar project · n note · space " + (view.isCurrentWeek ? "timer" : "back to this week")
         + " · or click +0:15, right-click −0:15, scroll"
     color: view.panel.faint
     font.family: view.panel.font

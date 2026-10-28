@@ -77,8 +77,8 @@ Panel {
       Keys.onEscapePressed: root.close()
 
       // Week: up/down (k/j) pick the project, left/right (h/l) the day,
-      // + and - add or remove 0:15 in that cell (with shift 1:00), space
-      // starts or stops the project's timer.
+      // + and - add or remove 0:15 in that cell (with shift 1:00), Enter
+      // makes the project the bar's, space starts or stops its timer.
       Keys.onPressed: function(event) {
         var k = event.key
         // w, o, c and a switch tabs anywhere outside a text field.
@@ -89,18 +89,7 @@ Panel {
           event.accepted = true
           return
         }
-        if (root.tab !== "week") return
-        var hour = (event.modifiers & Qt.ShiftModifier) && k !== Qt.Key_Plus
-        if (k === Qt.Key_Up || k === Qt.Key_K) weekView.moveCursor(-1)
-        else if (k === Qt.Key_Down || k === Qt.Key_J) weekView.moveCursor(1)
-        else if (k === Qt.Key_Left || k === Qt.Key_H) weekView.moveDay(-1)
-        else if (k === Qt.Key_Right || k === Qt.Key_L) weekView.moveDay(1)
-        else if (k === Qt.Key_Plus || k === Qt.Key_Equal) weekView.addToCursor(hour ? 60 : 15)
-        else if (k === Qt.Key_Minus || k === Qt.Key_Underscore) weekView.addToCursor(hour || k === Qt.Key_Underscore ? -60 : -15)
-        else if (k === Qt.Key_Space) weekView.toggleCursor()
-        else if (k === Qt.Key_N) weekView.focusNote()
-        else return
-        event.accepted = true
+        if (root.tab === "week" && weekView.handleKey(k, event.modifiers)) event.accepted = true
       }
 
       // Click on empty space takes focus out of a text field, which saves it.

@@ -77,6 +77,15 @@ open
 before=$(state '.entriesToday.p1 // 0')
 keys w plus plus minus
 check "+ + - adds 0:15 to the selected cell" $((before + 15)) "$(state '.entriesToday.p1 // 0')"
+before=$(state '.entriesToday.p1 // 0')
+wtype -M shift -k plus -m shift; sleep 0.5
+check "shift + adds 1:00" $((before + 60)) "$(state '.entriesToday.p1 // 0')"
+wtype -M shift -k minus -m shift; sleep 0.5
+check "shift - removes 1:00" "$before" "$(state '.entriesToday.p1 // 0')"
+keys Down Return
+check "Enter makes the cursor's project the bar's" true "$(state '.selectedProjectId != "p1"')"
+keys Up Return
+check "Enter again selects it back" '"p1"' "$(state .selectedProjectId)"
 keys n; wtype "Pair programming"; keys Return Escape
 check "n adds a note line" '"Pair programming"' "$(state '.notesToday.p1[-1]')"
 keys space

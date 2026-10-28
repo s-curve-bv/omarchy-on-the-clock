@@ -30,7 +30,7 @@ with a few customers, a handful of projects and a couple of hourly rates.
   internal, and an optional budget in hours or money. Finished work can be
   archived without losing its history.
 - **Keyboard first.** w/o/c/a for the tabs, arrows or hjkl in the grid, + and
-  − for hours, n for a note, space for the timer.
+  − for hours, Enter to pick the bar's project, n for a note, space for the timer.
 - **Your data in one JSON file**, with optional git history pushed to a
   private repository of your choice.
 - **Demo mode** to try everything on fictional data without touching yours.
@@ -83,6 +83,7 @@ else you type becomes a line in that day's notes.
 | ↑ ↓ or k j | Week: select a project |
 | ← → or h l | Week: select a day, continuing into the previous or next week |
 | + − | Week: add or remove 0:15 in the selected cell, with shift 1:00 |
+| Enter | Week: make the selected project the one the bar starts |
 | n | Week: add a note line to the selected cell; Enter adds, Esc returns |
 | space | Week: start or stop the selected project's timer |
 | Esc | close the panel |

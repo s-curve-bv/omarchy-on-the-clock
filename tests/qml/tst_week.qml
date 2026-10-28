@@ -80,6 +80,38 @@ TestCase {
     compare(saved().entries[today()].p2, 15)
   }
 
+  // The keys as a US layout sends them: shift+= is Key_Plus with shift,
+  // shift+- is Key_Underscore. A plain + (numpad, other layouts) is 0:15.
+  function test_shiftStepsAnHour_data() {
+    return [
+      { tag: "=", key: Qt.Key_Equal, mods: Qt.NoModifier, minutes: 15 },
+      { tag: "+", key: Qt.Key_Plus, mods: Qt.NoModifier, minutes: 15 },
+      { tag: "shift+=", key: Qt.Key_Plus, mods: Qt.ShiftModifier, minutes: 60 },
+      { tag: "shift+= as Equal", key: Qt.Key_Equal, mods: Qt.ShiftModifier, minutes: 60 },
+      { tag: "shift+-", key: Qt.Key_Underscore, mods: Qt.ShiftModifier, minutes: -60 },
+      { tag: "-", key: Qt.Key_Minus, mods: Qt.NoModifier, minutes: -15 }
+    ]
+  }
+
+  function test_shiftStepsAnHour(row) {
+    week.addToCursor(120)
+    verify(week.handleKey(row.key, row.mods))
+    compare(saved().entries[today()].p2, 120 + row.minutes)
+  }
+
+  // Enter picks the project the bar starts; moving alone doesn't.
+  function test_enterMakesTheCursorTheBarProject() {
+    compare(service.selectedProject.id, "p2")
+    verify(week.handleKey(Qt.Key_Up, Qt.NoModifier))
+    compare(service.selectedProject.id, "p2")
+    verify(week.handleKey(Qt.Key_Return, Qt.NoModifier))
+    compare(service.selectedProject.id, "p1")
+    compare(saved().settings.lastProjectId, "p1")
+    compare(service.timer, null, "selecting doesn't start the timer")
+    service.toggleTimer()
+    compare(service.timer.projectId, "p1")
+  }
+
   function test_movingPastMondayOpensThePreviousWeek() {
     const monday = Model.weekStart(today())
     for (let d = today(); d > monday; d = Model.addDays(d, -1)) week.moveDay(-1)

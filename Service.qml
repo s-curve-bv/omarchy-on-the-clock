@@ -176,6 +176,13 @@ Item {
     return booked
   }
 
+  // Makes a project the one the bar offers to start, without starting it.
+  function selectProject(projectId) {
+    var p = Model.byId(db.projects, projectId)
+    if (!p || activeProjects.indexOf(p) === -1 || db.settings.lastProjectId === projectId) return
+    mutate(function(d) { d.settings.lastProjectId = projectId })
+  }
+
   function toggleTimer(projectId) {
     if (timer && (!projectId || timer.projectId === projectId)) stopTimer()
     else if (projectId || selectedProject) startTimer(projectId || selectedProject.id)
@@ -456,6 +463,7 @@ Item {
       return JSON.stringify({
         demo: root.demo, loaded: root.loaded, today: root.today,
         timer: root.timer, notePrompt: root.notePrompt,
+        selectedProjectId: root.selectedProject ? root.selectedProject.id : null,
         entriesToday: root.db.entries[root.today] || {}, notesToday: root.db.notes[root.today] || {},
         links: root.db.calendar.links
       })
