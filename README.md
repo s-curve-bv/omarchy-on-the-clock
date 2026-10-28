@@ -20,9 +20,14 @@ with a few customers, a handful of projects and a couple of hourly rates.
   that time.
 - **Week grid.** Projects × days in 15-minute steps, by mouse or keyboard,
   with notes (one line per thing done) under the grid.
-- **Calendar meetings.** Link recurring meetings to a project; each ended
-  occurrence waits in Week to be booked or skipped, because a meeting
-  doesn't always happen.
+- **Calls.** With the On Air plugin, a camera or microphone call is booked
+  as a meeting: timed by itself during a linked meeting, otherwise after
+  you pick the project.
+- **Calendar meetings.** A meeting going on can start the timer with one
+  click. Ended meetings of the last two work days wait in Week to be booked
+  or skipped, because a meeting doesn't always happen: occurrences of
+  recurring meetings you linked to a project, and one-off meetings with a
+  project picker. Older ones can be booked from the Calendar tab.
 - **Income and targets.** Monthly and yearly income targets, a marker for
   where you should be today, and a plain forecast: where your pace ends up
   and what it takes per work day to make it.
@@ -55,8 +60,9 @@ book and on which day. When you stop it, the panel asks what you did: the
 calendar meetings during that time are offered with one click, and anything
 else you type becomes a line in that day's notes.
 
-- **Week**: projects × days. Ended calendar meetings you linked to a project
-  wait at the top to be booked or skipped. ▶ on a row starts that project's
+- **Week**: projects × days. At the top, the calendar meeting going on now,
+  with ▶ to start the timer for it, and the ended meetings of the last two
+  work days to be booked or skipped. ▶ on a row starts that project's
   timer; the timer books on the day it started, rounded to the nearest 0:15,
   so it is only offered in the current week. Under the grid are the notes
   of the selected cell, one line per thing done.
@@ -64,8 +70,10 @@ else you type becomes a line in that day's notes.
   where you should be today and plain-language forecasts: where your pace
   ends up and what it takes per work day to reach the target. Below it a
   monthly chart and hours, income and budget use per customer and project.
-- **Calendar**: link recurring meetings to a project, filtered by all, linked
-  or not linked. Declined and cancelled meetings are skipped.
+- **Calendar**: *Meetings* lists the last 31 days, to book or skip what
+  Week no longer asks about. *Recurring* links recurring meetings to a
+  project, filtered by all, linked or not linked. Declined and cancelled
+  meetings are skipped.
 - **Admin**: income targets, hourly rates, customers with their projects
   (rate, billable or internal, optional budget in hours or money), settings
   and backup. Finished projects and former customers can be archived: they
@@ -106,6 +114,44 @@ The Calendar tab reads the events cache of the
 (`~/.cache/blacksheep.calendar/events.json`); it never talks to Google or
 Microsoft itself. Without Datebook the rest of the plugin works as normal.
 The cache path can be changed in Admin.
+
+Which meetings Week asks about, and how, are settings in Admin:
+
+| Setting | Default | Does |
+|---|---|---|
+| Week asks about | 2 work days | How far back Week asks, today included |
+| Calendar tab shows | 31 days | How far back the Meetings list in Calendar goes |
+| One-off meetings | on | Also ask about meetings that don't repeat. Recurring meetings are only asked about once linked |
+| Guess the project | on | A one-off books on the project whose name is in its title; otherwise on the bar's project. You can change it per meeting |
+| Skip timed meetings | on | Don't ask about a meeting when the timer ran for at least half of it, so it is never booked twice |
+| Calls from On Air | on | Book camera and microphone calls as meetings (see Calls) |
+| Time linked calls | on | During a linked meeting, a call starts and stops the timer by itself |
+| Meeting timer from | meeting start | ▶ on a meeting going on counts from its start, or from when you click |
+
+### Calls
+
+With the On Air plugin (`stevenvegt.on-air`),
+calls become meetings too, ad-hoc ones included. On Air reports when apps
+use the camera, microphone or screen share through an Omarchy hook; install
+On the Clock's hook once:
+
+    omarchy hook install on-air ~/.config/omarchy/plugins/s-curve.on-the-clock/hooks/on-the-clock.sh
+
+Overlapping camera and microphone sessions count as one call; screen sharing
+alone isn't one. Then:
+
+- **During a linked meeting** (or up to 5 minutes before it), with no timer
+  running, the call starts the timer on that meeting's project from the
+  moment it began, and stops it at the moment it ended. A notification says
+  what was booked, with the meeting as a note.
+- **Otherwise**, when the call ends the panel asks: "You were in a meeting
+  for 0:47. Which project?", preset to the project named in the meeting's
+  title or the bar's project, with a note such as `Meeting: CCT meeting
+  (13:02–13:49)`. Enter books it, Esc skips it.
+- **A running timer is left alone**: it books the call's time already.
+
+Calls under 8 minutes book nothing. Without On Air or its hook nothing
+changes; both are switches in Admin.
 
 ## Data
 

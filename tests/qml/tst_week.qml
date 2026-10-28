@@ -26,11 +26,13 @@ TestCase {
     property color urgent: "#e67e80"
     property string font: "monospace"
     property int focusGridCalls: 0
+    signal scrolled()
     function focusGrid() { focusGridCalls++ }
   }
 
   Component { id: serviceComponent; Plugin.Service {} }
   Component { id: weekComponent; Plugin.WeekView { width: 860 } }
+  Component { id: callComponent; Plugin.CallPrompt { width: 860 } }
 
   property var service: null
   property var week: null
@@ -110,6 +112,49 @@ TestCase {
     compare(service.timer, null, "selecting doesn't start the timer")
     service.toggleTimer()
     compare(service.timer.projectId, "p1")
+  }
+
+  // Every MeetingRow in the view, in order.
+  function meetingRows(item, out) {
+    out = out || []
+    for (const c of item.children) {
+      if (c.meeting !== undefined && c.mode !== undefined) out.push(c)
+      meetingRows(c, out)
+    }
+    return out
+  }
+
+  function test_meetingsGoingOnAndEndedShowOnTop() {
+    const now = Date.now()
+    const at = (min) => new Date(now + min * 60000).toISOString()
+    Fs.write("/home/test/.cache/blacksheep.calendar/events.json", JSON.stringify({ events: [
+      { uid: "now", title: "Alpha sync", start: at(-10), end: at(20) },
+      { uid: "done", title: "Talk", start: at(-90), end: at(-30) }
+    ] }))
+    service = createTemporaryObject(serviceComponent, test)
+    tryVerify(() => service.loaded && service.calendarAvailable)
+    week = createTemporaryObject(weekComponent, test, { service: service, panel: fakePanel })
+    const rows = meetingRows(week)
+    compare(rows.map(r => [r.mode, r.meeting.uid, r.projectId]), [["now", "now", "p1"], ["ask", "done", "p2"]])
+    service.startMeeting(rows[0].meeting, rows[0].projectId)
+    tryVerify(() => meetingRows(week).filter(r => r.mode === "now").length === 0)
+    compare(service.timer.projectId, "p1")
+  }
+
+  // After a call the prompt shows with the note filled in; Enter books it.
+  function test_callPromptBooksOnEnter() {
+    const prompt = createTemporaryObject(callComponent, test, { service: service, panel: fakePanel })
+    compare(prompt.call, null)
+    const from = Date.now() - 20 * 60000
+    service.finishCall(from, Date.now())
+    tryVerify(() => prompt.call !== null && prompt.input.activeFocus)
+    compare(prompt.projectId, "p2", "the bar's project")
+    verify(prompt.input.text.indexOf("Meeting (") === 0, prompt.input.text)
+    keyClick(Qt.Key_Return)
+    const day = Qt.formatDate(new Date(from), "yyyy-MM-dd")
+    compare(saved().entries[day].p2, 15)
+    compare(prompt.call, null)
+    compare(fakePanel.focusGridCalls, 1)
   }
 
   function test_movingPastMondayOpensThePreviousWeek() {

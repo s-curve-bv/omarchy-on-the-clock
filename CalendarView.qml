@@ -4,8 +4,9 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Link recurring meetings (read from Datebook's calendar cache) to projects.
-// Linked meetings that have ended show up in the Week tab to confirm.
+// Meetings from Datebook's calendar cache. "Meetings" browses the last
+// lookbackDays to book or skip what Week no longer asks about; "Recurring"
+// links a series to a project, so Week asks about each occurrence.
 Column {
   id: view
 
@@ -13,7 +14,14 @@ Column {
   property var panel: null
 
   readonly property var db: service ? service.db : Model.defaults()
-  property string filter: "all"   // all | linked | unlinked
+  property string section: "meetings"   // meetings | series
+  property string filter: "all"         // all | linked | unlinked
+  property string meetingFilter: "waiting"   // waiting | all
+
+  readonly property var meetings: {
+    var all = service ? service.pastMeetings : []
+    return meetingFilter === "all" ? all : all.filter(function(m) { return !m.decided })
+  }
 
   readonly property var projectOptions: {
     var opts = [{ value: "", label: "Not linked" }]
@@ -47,12 +55,24 @@ Column {
 
   spacing: Style.spacing.lg
 
+  ButtonGroup {
+    fontFamily: view.panel.font
+    options: [
+      { value: "meetings", label: "Meetings" },
+      { value: "series", label: "Recurring" }
+    ]
+    value: view.section
+    onChanged: function(v) { view.section = v }
+  }
+
   Text {
     width: parent.width
     wrapMode: Text.WordWrap
-    text: "Link a recurring meeting to a project. Once an occurrence has ended it appears at the top of the Week tab, "
-        + "where you book it or mark that it didn't happen. Declined and cancelled meetings are skipped. "
-        + "Looks back " + view.db.settings.lookbackDays + " days."
+    text: view.section === "meetings"
+        ? "Meetings of the last " + view.db.settings.lookbackDays + " days. Week asks about the last "
+          + view.db.settings.askWorkDays + " work days; book or skip older ones here. Declined and cancelled meetings are skipped."
+        : "Link a recurring meeting to a project. Once an occurrence has ended it appears at the top of the Week tab, "
+          + "where you book or skip it. Unlinked recurring meetings are never asked about."
     color: view.panel.dim
     font.family: view.panel.font
     font.pixelSize: Style.font.body
@@ -69,8 +89,46 @@ Column {
     font.pixelSize: Style.font.body
   }
 
+  // ---- Meetings ----
   ButtonGroup {
-    visible: view.service && view.service.calendarAvailable
+    visible: view.section === "meetings" && view.service && view.service.calendarAvailable
+    fontFamily: view.panel.font
+    options: [
+      { value: "waiting", label: "Not decided" },
+      { value: "all", label: "All" }
+    ]
+    value: view.meetingFilter
+    onChanged: function(v) { view.meetingFilter = v }
+  }
+
+  Text {
+    visible: view.section === "meetings" && view.service && view.service.calendarAvailable && view.meetings.length === 0
+    text: view.meetingFilter === "waiting" ? "Every meeting has been decided on." : "No meetings found."
+    color: view.panel.dim
+    font.family: view.panel.font
+    font.pixelSize: Style.font.body
+  }
+
+  Column {
+    visible: view.section === "meetings"
+    width: parent.width
+    spacing: Style.spacing.xs
+
+    Repeater {
+      model: view.section === "meetings" ? view.meetings : []
+      delegate: MeetingRow {
+        required property var modelData
+        meeting: modelData
+        mode: "browse"
+        service: view.service
+        panel: view.panel
+      }
+    }
+  }
+
+  // ---- Recurring ----
+  ButtonGroup {
+    visible: view.section === "series" && view.service && view.service.calendarAvailable
     fontFamily: view.panel.font
     options: [
       { value: "all", label: "All" },
@@ -82,7 +140,7 @@ Column {
   }
 
   Text {
-    visible: view.service && view.service.calendarAvailable && view.shown.length === 0
+    visible: view.section === "series" && view.service && view.service.calendarAvailable && view.shown.length === 0
     text: view.filter === "linked" ? "No meetings linked yet." : view.filter === "unlinked" ? "Every recurring meeting is linked." : "No recurring meetings found."
     color: view.panel.dim
     font.family: view.panel.font
@@ -90,11 +148,12 @@ Column {
   }
 
   Column {
+    visible: view.section === "series"
     width: parent.width
     spacing: Style.spacing.sm
 
     Repeater {
-      model: view.shown
+      model: view.section === "series" ? view.shown : []
 
       delegate: Item {
         id: srow

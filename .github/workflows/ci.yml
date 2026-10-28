@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck backup.sh demo/screenshots.sh tests/*.sh
+      - run: shellcheck backup.sh demo/screenshots.sh hooks/*.sh tests/*.sh
 
   qml:
     name: QML lint and tests

@@ -170,6 +170,163 @@ TestCase {
     compare(s.notePrompt.projectId, "p1")
   }
 
+  function meeting(uid, title, fromMin, toMin) {
+    const now = Date.now()
+    return { uid: uid, title: title, recurring: false, seriesId: null,
+             start: new Date(now + fromMin * 60000).toISOString(), end: new Date(now + toMin * 60000).toISOString() }
+  }
+
+  function withNext(extra) {
+    const d = sample(extra)
+    d.projects.push({ id: "p3", customerId: "c1", name: "Next", rateId: "r1", billable: true, archived: false })
+    return d
+  }
+
+  // ▶ on a meeting going on: the timer counts from the meeting's start, the
+  // running one stops there, and the meeting isn't asked about afterwards.
+  function test_startingAMeetingCountsFromItsStart() {
+    Fs.write(calendarPath, JSON.stringify({ events: [meeting("m1", "Build sync", -20, 40)] }))
+    const s = start(withNext({ timer: { projectId: "p3", startedAt: Date.now() - 60 * 60000 } }))
+    tryVerify(() => s.currentMeetings.length === 1)
+    const m = s.currentMeetings[0]
+    compare(m.projectId, "p1", "guessed from the title")
+    s.startMeeting(m, m.projectId)
+    compare(saved().timer.projectId, "p1")
+    compare(saved().timer.startedAt, m.start)
+    compare(saved().entries[Qt.formatDate(new Date(m.start - 40 * 60000), "yyyy-MM-dd")].p3, 45)
+    compare(saved().calendar.decided.m1, "timer")
+    compare(s.currentMeetings.length, 0)
+  }
+
+  function test_meetingTimerCanStartWhenClicked() {
+    Fs.write(calendarPath, JSON.stringify({ events: [meeting("m1", "Sync", -20, 40)] }))
+    const s = start(withNext({ settings: { meetingTimerFrom: "now" } }))
+    tryVerify(() => s.currentMeetings.length === 1)
+    const before = Date.now()
+    s.startMeeting(s.currentMeetings[0], "p3")
+    verify(saved().timer.startedAt >= before)
+    compare(saved().timer.projectId, "p3", "the picked project")
+  }
+
+  function test_oneOffBooksOnThePickedProject() {
+    Fs.write(calendarPath, JSON.stringify({ events: [meeting("m1", "Talk", -90, -30)] }))
+    const s = start(withNext())
+    tryVerify(() => s.suggestions.length === 1)
+    const m = s.suggestions[0]
+    compare(m.projectId, "p1", "nothing in the title: the bar's project")
+    s.pickMeetingProject(m.uid, "p3")
+    s.confirmSuggestion(m, s.meetingPicks[m.uid])
+    compare(saved().entries[m.dateKey].p3, 60)
+    compare(saved().calendar.decided.m1, "confirmed")
+    compare(s.suggestions.length, 0)
+  }
+
+  function test_didntHappenCanBeUndone() {
+    Fs.write(calendarPath, JSON.stringify({ events: [meeting("m1", "Talk", -90, -30)] }))
+    const s = start(sample({ settings: { askOneOff: false } }))
+    tryVerify(() => s.pastMeetings.length === 1)
+    compare(s.suggestions.length, 0, "one-offs are off")
+    s.dismissSuggestion(s.pastMeetings[0])
+    compare(s.pastMeetings[0].decided, "dismissed")
+    s.undoDismiss(s.pastMeetings[0])
+    compare(saved().calendar.decided, {})
+  }
+
+  // A call during a linked meeting books itself, with the meeting as note.
+  function test_callDuringALinkedMeetingBooksItself() {
+    const ev = meeting("m1", "CCT meeting", -60, 0)
+    ev.recurring = true; ev.seriesId = "s1"
+    Fs.write(calendarPath, JSON.stringify({ events: [ev] }))
+    const s = start(withNext({ calendar: { links: { s1: "p3" }, decided: {} } }))
+    tryVerify(() => s.calendarAvailable)
+    const from = Date.now() - 58 * 60000
+    s.finishCall(from, Date.now() - 2 * 60000)
+    const day = Qt.formatDate(new Date(from), "yyyy-MM-dd")
+    compare(saved().entries[day].p3, 60)
+    verify(saved().notes[day].p3[0].indexOf("Meeting: CCT meeting (") === 0)
+    compare(saved().calendar.decided.m1, "confirmed")
+    compare(s.callPrompt, null)
+  }
+
+  // An ad-hoc call asks for the project, preset to the bar's.
+  function test_adHocCallAsksForTheProject() {
+    const s = start(withNext({ settings: { lastProjectId: "p1" } }))
+    const from = Date.now() - 25 * 60000
+    s.finishCall(from, Date.now())
+    compare(s.callPrompt.projectId, "p1")
+    compare(s.callPrompt.minutes, 30)
+    compare(s.callPrompt.meeting, null)
+    s.bookCall(s.callPrompt, "p3", "Call with Sam")
+    const day = Qt.formatDate(new Date(from), "yyyy-MM-dd")
+    compare(saved().entries[day].p3, 30)
+    compare(saved().notes[day].p3, ["Call with Sam"])
+    compare(s.callPrompt, null)
+  }
+
+  function sec(ms) { return String(Math.floor(ms / 1000)) }
+
+  // Camera and microphone of one call, events doubled and out of order.
+  function test_onAirSessionsMakeOneCall() {
+    const s = start(withNext({ settings: { lastProjectId: "p1" } }))
+    const t0 = Date.now() - 40 * 60000, t1 = t0 + 60000, end = Date.now() - 5 * 60000
+    compare(s.onAirEvent("start", "mic", "zoom", sec(t0), ""), "in a call")
+    compare(s.onAirEvent("start", "camera", "zoom", sec(t1), ""), "in a call")
+    compare(s.onAirEvent("start", "mic", "zoom", sec(t0), ""), "known")
+    compare(s.onAirEvent("start", "screen", "zoom", sec(t1), ""), "ignored")
+    compare(s.onAirEvent("stop", "camera", "zoom", sec(t1), sec(end - 60000)), "in a call")
+    compare(s.callPrompt, null)
+    compare(s.onAirEvent("stop", "mic", "zoom", sec(t0), sec(end)), "call ended")
+    compare(s.onAirEvent("stop", "mic", "zoom", sec(t0), sec(end)), "known")
+    compare(s.callPrompt.from, Number(sec(t0)) * 1000)
+    compare(s.callPrompt.to, Number(sec(end)) * 1000)
+    compare(s.callPrompt.minutes, 30)
+    compare(s.callPrompt.projectId, "p1")
+  }
+
+  // During a linked meeting the call times itself, from its real start.
+  function test_callDuringALinkedMeetingStartsAndStopsTheTimer() {
+    const ev = meeting("m1", "CCT meeting", -30, 30)
+    ev.recurring = true; ev.seriesId = "s1"
+    Fs.write(calendarPath, JSON.stringify({ events: [ev] }))
+    const s = start(withNext({ calendar: { links: { s1: "p3" }, decided: {} } }))
+    tryVerify(() => s.calendarAvailable)
+    const t0 = Date.now() - 28 * 60000
+    s.onAirEvent("start", "mic", "LibreWolf", sec(t0), "")
+    compare(saved().timer.projectId, "p3")
+    compare(saved().timer.startedAt, Number(sec(t0)) * 1000)
+    compare(saved().calendar.decided.m1, "confirmed")
+    s.onAirEvent("stop", "mic", "LibreWolf", sec(t0), sec(Date.now()))
+    compare(saved().timer, null)
+    const day = Qt.formatDate(new Date(t0), "yyyy-MM-dd")
+    compare(saved().entries[day].p3, 30)
+    verify(saved().notes[day].p3[0].indexOf("Meeting: CCT meeting (") === 0)
+    compare(s.callPrompt, null)
+    compare(s.notePrompt, null, "no 'what did you do?' for a call")
+  }
+
+  function test_aRunningTimerIsLeftAlone() {
+    const s = start(withNext({ timer: { projectId: "p1", startedAt: Date.now() - 60 * 60000 } }))
+    const t0 = Date.now() - 30 * 60000
+    s.onAirEvent("start", "mic", "Slack", sec(t0), "")
+    s.onAirEvent("stop", "mic", "Slack", sec(t0), sec(Date.now()))
+    compare(saved().timer.projectId, "p1")
+    compare(s.callPrompt, null, "the timer books that time")
+  }
+
+  // After a shell restart only the stop arrives; it is still a call.
+  function test_aStopWithoutItsStartIsACall() {
+    const s = start(sample())
+    s.onAirEvent("stop", "camera", "zoom", sec(Date.now() - 20 * 60000), sec(Date.now()))
+    compare(s.callPrompt.minutes, 15)
+  }
+
+  function test_onAirCanBeTurnedOff() {
+    const s = start(sample({ settings: { onAir: false } }))
+    compare(s.onAirEvent("start", "mic", "zoom", sec(Date.now()), ""), "off")
+    compare(s.onAirEvent("stop", "mic", "zoom", sec(Date.now() - 20 * 60000), sec(Date.now())), "off")
+    compare(s.callPrompt, null)
+  }
+
   function test_selectedProjectSkipsArchived() {
     const s = start(sample({ settings: { lastProjectId: "p2" } }))
     compare(s.selectedProject.id, "p1")

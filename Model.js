@@ -9,9 +9,16 @@
 //   entries:   { "YYYY-MM-DD": { projectId: minutes } }
 //   notes:     { "YYYY-MM-DD": { projectId: ["what was done", ...] } }
 //   targets:   { month, year }                      income, excl. VAT
-//   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to} }
-//   calendar:  { links: { seriesId: projectId }, decided: { uid: "confirmed" | "dismissed" } }
-//   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache, lookbackDays,
+//   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to},
+//                       call }                       call: started by a call, which stops it
+//   calendar:  { links: { seriesId: projectId },
+//                decided: { uid: "confirmed" | "dismissed" | "timer" } }   timer: the timer covered it
+//   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache,
+//                lookbackDays,                        Calendar tab: meetings to browse
+//                askWorkDays, askOneOff,              Week: which meetings it asks about
+//                guessProject, skipTimerCovered, meetingTimerFrom: "start" | "now",
+//                onAir, autoBookCalls,                calls reported by On Air; timed by themselves
+//                                                     during a linked meeting
 //                backup, backupRemote }                git history of hours.json
 
 var QUARTER = 15
@@ -120,6 +127,13 @@ function defaults() {
       workDays: [1, 2, 3, 4, 5],
       calendarCache: "~/.cache/blacksheep.calendar/events.json",
       lookbackDays: 31,
+      askWorkDays: 2,
+      askOneOff: true,
+      guessProject: true,
+      skipTimerCovered: true,
+      meetingTimerFrom: "start",
+      onAir: true,
+      autoBookCalls: true,
       backup: false,
       backupRemote: ""
     }
@@ -270,13 +284,21 @@ function timerElapsedMinutes(timer, nowMs) {
 }
 
 // Mutates `data`: books the running timer on the day it started, rounded to
-// the nearest quarter. Returns the booked minutes.
-function stopTimer(data, nowMs) {
+// the nearest quarter. Returns the booked minutes. With `events` and
+// skipTimerCovered on, meetings the timer covered are marked as handled.
+function stopTimer(data, nowMs, events) {
   var t = data.timer
   if (!t) return 0
   var minutes = roundQuarter(timerElapsedMinutes(t, nowMs))
   if (minutes > 0 && byId(data.projects, t.projectId))
     addMinutes(data, dateKey(new Date(t.startedAt)), t.projectId, minutes)
+  if (minutes > 0 && events && data.settings.skipTimerCovered) {
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i]
+      if (usableEvent(e) && !data.calendar.decided[e.uid] && covers(t.startedAt, nowMs, e))
+        data.calendar.decided[e.uid] = "timer"
+    }
+  }
   data.timer = null
   return minutes
 }
@@ -321,35 +343,163 @@ function recurringSeries(events, nowMs) {
   return out
 }
 
-// Past occurrences of linked series that are still waiting for a decision.
-function suggestions(data, events, nowMs) {
-  var links = data.calendar.links
-  var decided = data.calendar.decided
-  var since = nowMs - (data.settings.lookbackDays || 31) * 86400000
+// Whether a timer that ran from `fromMs` to `toMs` covered at least half
+// of the meeting.
+function covers(fromMs, toMs, e) {
+  var start = Date.parse(e.start), end = Date.parse(e.end)
+  return Math.min(end, toMs) - Math.max(start, fromMs) >= (end - start) / 2
+}
+
+// Start of the `n`th most recent work day, today included: with n = 2 on a
+// Monday, that is the Friday before.
+function askSince(nowMs, n, workDays) {
+  var k = dateKey(new Date(nowMs))
+  for (var seen = 0, i = 0; i < 31; i++, k = addDays(k, -1)) {
+    if (isWorkDay(k, workDays) && ++seen >= n) break
+  }
+  return parseKey(k).getTime()
+}
+
+function squash(text) { return String(text || "").toLowerCase().replace(/[^a-z0-9]/g, "") }
+
+// The active project whose name appears in the title, the longest name if
+// several do; "" when none does.
+function guessProject(data, title) {
+  var t = squash(title)
+  var best = null
+  for (var i = 0; i < data.projects.length; i++) {
+    var p = data.projects[i]
+    var c = byId(data.customers, p.customerId)
+    var name = squash(p.name)
+    if (p.archived || (c && c.archived) || name.length < 3 || t.indexOf(name) === -1) continue
+    if (!best || name.length > squash(best.name).length) best = p
+  }
+  return best ? best.id : ""
+}
+
+// The project a meeting books on: its series' link, else (guessProject on)
+// a project named in the title, else `fallbackId`.
+function meetingProject(data, e, fallbackId) {
+  var linked = e.seriesId ? data.calendar.links[e.seriesId] : ""
+  var p = linked ? byId(data.projects, linked) : null
+  if (p && !p.archived) return p.id
+  return (data.settings.guessProject && guessProject(data, e.title)) || fallbackId || ""
+}
+
+// Week asks about meetings of a linked series and, with askOneOff on, about
+// meetings that don't repeat. Recurring meetings that aren't linked are
+// never asked about: leaving them unlinked says they aren't work.
+function askable(data, e) {
+  if (!usableEvent(e)) return false
+  if (e.recurring && e.seriesId) {
+    var p = byId(data.projects, data.calendar.links[e.seriesId])
+    return !!p && !p.archived
+  }
+  return !!data.settings.askOneOff
+}
+
+function meetingRow(data, e, fallbackId) {
+  var start = Date.parse(e.start)
+  return {
+    uid: e.uid, title: e.title || "(no title)", start: start, end: Date.parse(e.end),
+    dateKey: dateKey(new Date(start)), minutes: eventMinutes(e),
+    projectId: meetingProject(data, e, fallbackId),
+    linked: !!(e.seriesId && data.calendar.links[e.seriesId]),
+    decided: data.calendar.decided[e.uid] || ""
+  }
+}
+
+// Ended meetings from the last askWorkDays work days that are still waiting
+// for a decision, earliest first. With skipTimerCovered, a meeting the
+// running timer covers isn't asked about either.
+function suggestions(data, events, nowMs, fallbackId) {
+  var s = data.settings
+  var since = askSince(nowMs, s.askWorkDays || 1, s.workDays)
+  var t = data.timer
   var out = []
   for (var i = 0; i < (events || []).length; i++) {
     var e = events[i]
-    if (!usableEvent(e) || !e.seriesId) continue
-    var pid = links[e.seriesId]
-    if (!pid || decided[e.uid]) continue
-    var p = byId(data.projects, pid)
-    if (!p || p.archived) continue
-    var start = Date.parse(e.start)
-    if (Date.parse(e.end) > nowMs || start < since) continue
-    out.push({ uid: e.uid, title: e.title || "", start: start, dateKey: dateKey(new Date(start)), minutes: eventMinutes(e), projectId: pid })
+    if (!askable(data, e) || data.calendar.decided[e.uid]) continue
+    if (Date.parse(e.end) > nowMs || Date.parse(e.start) < since) continue
+    if (t && s.skipTimerCovered && covers(t.startedAt, nowMs, e)) continue
+    out.push(meetingRow(data, e, fallbackId))
   }
   out.sort(function(a, b) { return a.start - b.start })
   return out
 }
 
+// Meetings going on right now that Week can start the timer for.
+function currentMeetings(data, events, nowMs, fallbackId) {
+  var out = []
+  for (var i = 0; i < (events || []).length; i++) {
+    var e = events[i]
+    if (!askable(data, e) || data.calendar.decided[e.uid]) continue
+    if (Date.parse(e.start) > nowMs || Date.parse(e.end) <= nowMs) continue
+    out.push(meetingRow(data, e, fallbackId))
+  }
+  out.sort(function(a, b) { return a.start - b.start })
+  return out
+}
+
+// Every meeting of the last lookbackDays that has started, for browsing in
+// the Calendar tab, newest first, with what was decided about it.
+function pastMeetings(data, events, nowMs, fallbackId) {
+  var since = nowMs - (data.settings.lookbackDays || 31) * 86400000
+  var out = []
+  for (var i = 0; i < (events || []).length; i++) {
+    var e = events[i]
+    var start = Date.parse(e && e.start)
+    if (!usableEvent(e) || start > nowMs || start < since) continue
+    out.push(meetingRow(data, e, fallbackId))
+  }
+  out.sort(function(a, b) { return b.start - a.start })
+  return out
+}
+
+// ---------------------------------------------------------------- calls
+// A call is a stretch with the camera or microphone in use, reported by
+// the On Air plugin. Afterwards it is booked as a meeting: on the calendar
+// meeting it overlapped most, if any.
+
+function hhmm(ms) { var d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()) }
+
+// What a call from `fromMs` to `toMs` books, or null when there is nothing
+// to book: under 8 minutes, or a timer already ran for most of it.
+//   { day, from, to, minutes, meeting: meetingRow | null, projectId, clear, line }
+// `clear`: the meeting belongs to a linked series, so the project is known.
+function callOutcome(data, events, fromMs, toMs, fallbackId) {
+  var minutes = roundQuarter((toMs - fromMs) / 60000)
+  if (minutes <= 0) return null
+  var t = data.timer
+  if (t && toMs - Math.max(fromMs, t.startedAt) >= (toMs - fromMs) / 2) return null
+  var best = null, bestOverlap = 0
+  for (var i = 0; i < (events || []).length; i++) {
+    var e = events[i]
+    if (!usableEvent(e)) continue
+    var overlap = Math.min(toMs, Date.parse(e.end)) - Math.max(fromMs, Date.parse(e.start))
+    if (overlap > bestOverlap) { best = e; bestOverlap = overlap }
+  }
+  var m = best ? meetingRow(data, best, fallbackId) : null
+  return {
+    day: dateKey(new Date(fromMs)), from: fromMs, to: toMs, minutes: minutes,
+    meeting: m, projectId: m ? m.projectId : (fallbackId || ""),
+    clear: !!(m && m.linked && !m.decided),
+    line: (m ? "Meeting: " + m.title : "Meeting") + " (" + hhmm(fromMs) + "–" + hhmm(toMs) + ")"
+  }
+}
+
 // Decisions only matter while the occurrence is still inside the lookback
-// window; older ones are dropped so the file does not grow forever.
-function pruneDecided(data, nowMs) {
+// window; older ones are dropped so the file does not grow forever. A
+// one-off's uid carries no date: it is kept while the calendar still has it.
+function pruneDecided(data, nowMs, events) {
   var keep = {}
   var cutoff = dateKey(new Date(nowMs - ((data.settings.lookbackDays || 31) + 14) * 86400000))
+  var known = {}
+  for (var i = 0; i < (events || []).length; i++) if (events[i]) known[events[i].uid] = true
   for (var uid in data.calendar.decided) {
     var m = /_(\d{4})(\d{2})(\d{2})(T|$)/.exec(uid)
     if (m && (m[1] + "-" + m[2] + "-" + m[3]) < cutoff) continue
+    if (!m && events && events.length && !known[uid]) continue
     keep[uid] = data.calendar.decided[uid]
   }
   data.calendar.decided = keep
@@ -366,6 +516,8 @@ if (typeof module !== "undefined") {
     addMinutes: addMinutes, totals: totals, budgetUsage: budgetUsage, isWorkDay: isWorkDay,
     workDaysBetween: workDaysBetween, pace: pace, timerElapsedMinutes: timerElapsedMinutes,
     stopTimer: stopTimer, recurringSeries: recurringSeries, suggestions: suggestions,
-    pruneDecided: pruneDecided
+    pruneDecided: pruneDecided, askSince: askSince, guessProject: guessProject,
+    meetingProject: meetingProject, currentMeetings: currentMeetings, pastMeetings: pastMeetings,
+    callOutcome: callOutcome
   }
 }

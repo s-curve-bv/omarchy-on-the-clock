@@ -99,10 +99,26 @@ function build(Model, today, calendarPath, nowMs) {
     })
   }
 
-  // Leave the two most recent meetings waiting for a decision.
+  // A one-off on the last work day before today, which Week asks about
+  // and books on the project named in its title.
+  var prev = Model.addDays(today, -1)
+  while (!Model.isWorkDay(prev, d.settings.workDays)) prev = Model.addDays(prev, -1)
+  var review = Model.parseKey(prev)
+  review.setHours(15, 0, 0, 0)
+  events.push({
+    uid: "demo-portal-review", title: "Patient portal: accessibility review", allDay: false, recurring: false, seriesId: null,
+    start: review.toISOString(), end: new Date(review.getTime() + 45 * 60000).toISOString(),
+    status: "confirmed", response: "accepted"
+  })
+
+  // Meetings before the days Week asks about were booked; those since wait.
   var now = Model.parseKey(today).getTime() + 14 * 3600000
+  var since = Model.askSince(now, d.settings.askWorkDays, d.settings.workDays)
+  var asked = d.settings.askWorkDays
+  d.settings.askWorkDays = 31
   var open = Model.suggestions(d, events, now)
-  for (var j = 0; j < open.length - 2; j++) d.calendar.decided[open[j].uid] = "confirmed"
+  d.settings.askWorkDays = asked
+  for (var j = 0; j < open.length; j++) if (open[j].start < since) d.calendar.decided[open[j].uid] = "confirmed"
 
   return { hours: d, events: events }
 }

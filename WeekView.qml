@@ -5,8 +5,8 @@ import qs.Ui
 import "Model.js" as Model
 
 // Projects x days of one week. Click a cell for +0:15, right-click for
-// -0:15, shift-click for +1:00, scroll to step. Calendar meetings waiting
-// for a decision sit on top.
+// -0:15, shift-click for +1:00, scroll to step. On top, the calendar
+// meeting going on now, and the ones of the last work days to decide on.
 Column {
   id: view
 
@@ -173,85 +173,51 @@ Column {
     }
   }
 
-  // ---- Calendar suggestions ----
+  // ---- Calendar: the meeting going on, and the ones to decide on ----
+  Column {
+    width: parent.width
+    spacing: Style.spacing.sm
+    visible: view.service && view.service.currentMeetings.length > 0
+
+    PanelSectionHeader {
+      text: "FROM YOUR CALENDAR · GOING ON NOW"
+      foreground: view.panel.fg
+      fontFamily: view.panel.font
+    }
+
+    Repeater {
+      model: view.service ? view.service.currentMeetings : []
+      delegate: MeetingRow {
+        required property var modelData
+        meeting: modelData
+        mode: "now"
+        service: view.service
+        panel: view.panel
+      }
+    }
+
+    PanelSeparator { width: view.width; foreground: view.panel.fg }
+  }
+
   Column {
     width: parent.width
     spacing: Style.spacing.sm
     visible: view.service && view.service.suggestions.length > 0
 
     PanelSectionHeader {
-      text: "FROM YOUR CALENDAR · DID THESE TAKE PLACE?"
+      text: "FROM YOUR CALENDAR · BOOK OR SKIP"
       foreground: view.panel.fg
       fontFamily: view.panel.font
     }
 
     Repeater {
       model: view.service ? view.service.suggestions : []
-
-      // Date and time in a fixed column, then the meeting, with the project
-      // it books on underneath.
-      delegate: Item {
-        id: srow
+      delegate: MeetingRow {
         required property var modelData
-        width: view.width
-        height: Math.max(meeting.implicitHeight, Style.spacing.controlHeight) + Style.spacing.sm
-
-        Text {
-          id: when
-          anchors.top: meeting.top
-          width: Style.space(170)
-          text: Qt.formatDateTime(new Date(srow.modelData.start), "ddd d MMM  HH:mm")
-          color: view.panel.fg
-          font.family: view.panel.font
-          font.pixelSize: Style.font.body
-          font.bold: true
-        }
-
-        Column {
-          id: meeting
-          anchors.left: when.right
-          anchors.right: actions.left
-          anchors.rightMargin: Style.spacing.lg
-          anchors.verticalCenter: parent.verticalCenter
-
-          Text {
-            width: parent.width
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            text: srow.modelData.title
-            color: view.panel.fg
-            font.family: view.panel.font
-            font.pixelSize: Style.font.body
-          }
-          Text {
-            width: parent.width
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            text: "→ " + view.service.projectLabel(Model.byId(view.db.projects, srow.modelData.projectId))
-            color: view.panel.dim
-            font.family: view.panel.font
-            font.pixelSize: Style.font.bodySmall
-          }
-        }
-
-        Row {
-          id: actions
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.spacing.sm
-
-          Button {
-            text: "Book " + Model.fmtHours(srow.modelData.minutes)
-            fontFamily: view.panel.font
-            bordered: true
-            onClicked: view.service.confirmSuggestion(srow.modelData)
-          }
-          Button {
-            text: "Didn't happen"
-            fontFamily: view.panel.font
-            onClicked: view.service.dismissSuggestion(srow.modelData)
-          }
-        }
+        meeting: modelData
+        mode: "ask"
+        service: view.service
+        panel: view.panel
       }
     }
 

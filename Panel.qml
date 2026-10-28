@@ -64,9 +64,10 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    // KeyboardPanel focuses this after opening; a waiting "what did you do?"
-    // prompt takes the keys first.
-    focusTarget: root.service && root.service.notePrompt ? notePrompt.input : keys
+    // KeyboardPanel focuses this after opening; a call to book or a waiting
+    // "what did you do?" prompt takes the keys first.
+    focusTarget: root.service && root.service.callPrompt ? callPrompt.input
+        : root.service && root.service.notePrompt ? notePrompt.input : keys
     contentWidth: panel.fittedContentWidth(Style.space(780))
     contentHeight: panel.fittedContentHeight(column.implicitHeight + 2 * root.edge, Style.space(860))
 
@@ -238,6 +239,13 @@ Panel {
               fontFamily: root.font
               onClicked: root.service.stopTimer()
             }
+          }
+
+          CallPrompt {
+            id: callPrompt
+            width: parent.width
+            service: root.service
+            panel: root
           }
 
           NotePrompt {

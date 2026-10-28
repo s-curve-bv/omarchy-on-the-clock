@@ -601,16 +601,99 @@ Column {
       Label { text: "minutes without input while a timer runs (0 = off)" }
     }
 
+    // Which calendar meetings Week asks about, and how.
     Row {
       spacing: Style.spacing.lg
-      Label { text: "Calendar look-back"; width: view.labelW }
+      Label { text: "Week asks about"; width: view.labelW }
+      Field {
+        width: Style.space(70)
+        value: String(view.db.settings.askWorkDays)
+        validator: IntValidator { bottom: 1; top: 31 }
+        onCommit: view.service.setSetting("askWorkDays", Math.max(1, Math.round(view.num(text))))
+      }
+      Label { text: "work days of meetings, today included" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Calendar tab shows"; width: view.labelW }
       Field {
         width: Style.space(70)
         value: String(view.db.settings.lookbackDays)
         validator: IntValidator { bottom: 1; top: 365 }
         onCommit: view.service.setSetting("lookbackDays", Math.max(1, Math.round(view.num(text))))
       }
-      Label { text: "days" }
+      Label { text: "days of meetings to browse and book" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "One-off meetings"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.askOneOff
+        onToggled: view.service.setSetting("askOneOff", !view.db.settings.askOneOff)
+      }
+      Label { text: "ask about meetings that don't repeat too, not only linked series" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Guess the project"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.guessProject
+        onToggled: view.service.setSetting("guessProject", !view.db.settings.guessProject)
+      }
+      Label { text: "for a one-off, the project named in its title; otherwise the bar's project" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Skip timed meetings"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.skipTimerCovered
+        onToggled: view.service.setSetting("skipTimerCovered", !view.db.settings.skipTimerCovered)
+      }
+      Label { text: "don't ask about a meeting when the timer ran for at least half of it" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Calls from On Air"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.onAir
+        onToggled: view.service.setSetting("onAir", !view.db.settings.onAir)
+      }
+      Label { text: "book a camera or microphone call as a meeting (needs the On Air plugin and its hook)" }
+    }
+
+    Row {
+      visible: !!view.db.settings.onAir
+      spacing: Style.spacing.lg
+      Label { text: "Time linked calls"; width: view.labelW }
+      ToggleSwitch {
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!view.db.settings.autoBookCalls
+        onToggled: view.service.setSetting("autoBookCalls", !view.db.settings.autoBookCalls)
+      }
+      Label { text: "during a linked meeting, start and stop the timer without asking" }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Meeting timer from"; width: view.labelW }
+      ButtonGroup {
+        fontFamily: view.panel.font
+        options: [
+          { value: "start", label: "Meeting start" },
+          { value: "now", label: "When I click ▶" }
+        ]
+        value: view.db.settings.meetingTimerFrom === "now" ? "now" : "start"
+        onChanged: function(v) { view.service.setSetting("meetingTimerFrom", v) }
+      }
     }
 
     Row {

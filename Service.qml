@@ -66,8 +66,13 @@ Item {
   // Coarser clock for the calendar lists, so their rows are not rebuilt
   // every second while a timer runs.
   property real calendarNow: Date.now()
+  property bool calendarPruned: false
   readonly property var series: Model.recurringSeries(events, calendarNow)
-  readonly property var suggestions: Model.suggestions(db, events, calendarNow)
+  // One-off meetings without a project in their title book on the bar's.
+  readonly property string fallbackProjectId: selectedProject ? selectedProject.id : ""
+  readonly property var suggestions: Model.suggestions(db, events, calendarNow, fallbackProjectId)
+  readonly property var currentMeetings: Model.currentMeetings(db, events, calendarNow, fallbackProjectId)
+  readonly property var pastMeetings: Model.pastMeetings(db, events, calendarNow, fallbackProjectId)
 
   // What we last wrote, so the watcher's reload of our own save is skipped
   // instead of replacing db with an identical copy (which resets every
@@ -146,18 +151,22 @@ Item {
   function closeNotePrompt() { notePrompt = null }
 
   // ---- Timer ----
-  function startTimer(projectId) {
+  // `startedAt` (default now) may lie in the past, for a meeting that began
+  // before you clicked; a running timer then stops at that moment.
+  function startTimer(projectId, startedAt, onStart) {
     var booked = 0
     var previous = null
     var previousStart = 0
+    var at = startedAt || Date.now()
     mutate(function(d) {
       if (d.timer) {
         previous = Model.byId(d.projects, d.timer.projectId)
         previousStart = d.timer.startedAt
-        booked = Model.stopTimer(d, Date.now())
+        booked = Model.stopTimer(d, Math.max(previousStart, at), root.events)
       }
-      d.timer = { projectId: projectId, startedAt: Date.now() }
+      d.timer = { projectId: projectId, startedAt: at }
       d.settings.lastProjectId = projectId
+      if (onStart) onStart(d)
     })
     if (previous && booked > 0) {
       notify("Booked " + Model.fmtHours(booked), projectLabel(previous))
@@ -170,7 +179,7 @@ Item {
     var p = timerProject
     var startedAt = timer.startedAt
     var booked = 0
-    mutate(function(d) { booked = Model.stopTimer(d, Date.now()) })
+    mutate(function(d) { booked = Model.stopTimer(d, Date.now(), root.events) })
     askNote(p, startedAt, booked)
     notify(booked > 0 ? "Booked " + Model.fmtHours(booked) : "Timer stopped, under 8 minutes so nothing booked", projectLabel(p))
     return booked
@@ -233,15 +242,153 @@ Item {
   }
 
   // ---- Calendar ----
-  function confirmSuggestion(s, minutes) {
+  // Book a meeting, on `projectId` when one was picked for it.
+  function confirmSuggestion(s, projectId) {
+    var pid = projectId || s.projectId
+    if (!Model.byId(db.projects, pid)) return
     mutate(function(d) {
-      Model.addMinutes(d, s.dateKey, s.projectId, minutes === undefined ? s.minutes : minutes)
+      Model.addMinutes(d, s.dateKey, pid, s.minutes)
       d.calendar.decided[s.uid] = "confirmed"
     })
   }
 
   function dismissSuggestion(s) {
     mutate(function(d) { d.calendar.decided[s.uid] = "dismissed" })
+  }
+
+  // A skip can be taken back; a booking is undone in the grid.
+  function undoDismiss(s) {
+    if (db.calendar.decided[s.uid] !== "dismissed") return
+    mutate(function(d) { delete d.calendar.decided[s.uid] })
+  }
+
+  // ---- Calls ----
+  // On Air reports camera, microphone and screen-share sessions through its
+  // hook (hooks/on-the-clock.sh calls onAir over IPC), with their real start
+  // and end times. Overlapping camera and microphone sessions make one call;
+  // screen sharing alone isn't one. Events may arrive twice: each session is
+  // known by sensor, app and start, and handled once.
+  property var sessions: ({})   // "sensor|app|start" -> { start, end, done } in ms; not saved
+  // The timer was started by the call going on, so its end stops it.
+  property bool callStartedTimer: false
+  // A call whose project isn't clear from the calendar, waiting in the
+  // panel: Model.callOutcome. Not saved.
+  property var callPrompt: null
+
+  function onAirEvent(event, sensor, app, startSec, endSec) {
+    if (!db.settings.onAir) return "off"
+    if (sensor !== "mic" && sensor !== "camera") return "ignored"
+    var start = Number(startSec) * 1000
+    var end = Number(endSec) * 1000
+    if (!(start > 0) || (event === "stop" && !(end > 0)) || (event !== "start" && event !== "stop")) return "bad event"
+    var key = sensor + "|" + app + "|" + startSec
+    var known = sessions[key]
+    if (known && (known.done || event === "start" || known.end)) return "known"
+
+    var open = openSessions()
+    var next = Object.assign({}, sessions)
+    next[key] = { start: start, end: event === "stop" ? end : 0, done: false }
+    sessions = next
+    if (event === "start" && open.length === 0) beginCall(start)
+
+    // The call ends when its last session has stopped.
+    var call = openSessions()
+    if (call.some(function(x) { return !x.end })) return "in a call"
+    var from = Math.min.apply(null, call.map(function(x) { return x.start }))
+    var to = Math.max.apply(null, call.map(function(x) { return x.end }))
+    next = Object.assign({}, sessions)
+    for (var k in next) if (!next[k].done) next[k] = Object.assign({}, next[k], { done: true })
+    sessions = next
+    finishCall(from, to)
+    return "call ended"
+  }
+
+  function openSessions() {
+    var out = []
+    for (var k in sessions) if (!sessions[k].done) out.push(sessions[k])
+    return out
+  }
+
+  // A call during a linked meeting, with no timer running, starts the timer
+  // on that meeting's project from the moment the call began. Joining up to
+  // 5 minutes early counts as during.
+  function beginCall(from) {
+    callStartedTimer = false
+    if (timer || !db.settings.autoBookCalls) return
+    var linked = Model.currentMeetings(db, events, Date.now() + 5 * 60000, fallbackProjectId)
+      .filter(function(m) { return m.linked })
+    if (linked.length !== 1) return
+    var m = linked[0]
+    startTimer(m.projectId, Math.min(from, Date.now()), function(d) {
+      d.timer.call = true
+      d.calendar.decided[m.uid] = "confirmed"
+    })
+    callStartedTimer = true
+  }
+
+  function finishCall(from, to) {
+    var length = Model.fmtHours(Math.round((to - from) / 60000))
+    // The call's own timer: stop it at the call's end.
+    if (timer && timer.call) {
+      callStartedTimer = false
+      var p = timerProject
+      var m = Model.meetingsDuring(events, from, to)[0]
+      var booked = 0
+      mutate(function(d) {
+        var day = Model.dateKey(new Date(d.timer.startedAt))
+        booked = Model.stopTimer(d, to, root.events)
+        if (booked > 0) Model.addNote(d, day, p.id, (m ? "Meeting: " + m.title : "Meeting") + " (" + Qt.formatTime(new Date(from), "HH:mm") + "–" + Qt.formatTime(new Date(to), "HH:mm") + ")")
+      })
+      notify("You were in " + (m ? m.title : "a meeting") + " for " + length,
+             booked > 0 ? "Booked " + Model.fmtHours(booked) + " on " + projectLabel(p) : "Under 8 minutes, so nothing booked")
+      return
+    }
+    // You stopped or changed the call's timer yourself: that's booked.
+    if (callStartedTimer) { callStartedTimer = false; return }
+    var c = Model.callOutcome(db, events, from, to, fallbackProjectId)
+    if (!c) return
+    var what = c.meeting ? c.meeting.title : "a meeting"
+    if (c.clear && db.settings.autoBookCalls) {
+      bookCall(c, c.projectId, c.line)
+      notify("You were in " + what + " for " + length,
+             "Booked " + Model.fmtHours(c.minutes) + " on " + projectLabel(Model.byId(db.projects, c.projectId)))
+      return
+    }
+    callPrompt = c
+    notify("You were in " + what + " for " + length, "Open On the Clock to book it")
+    Quickshell.execDetached(["omarchy-shell", "shell", "summon", "s-curve.on-the-clock", "{}"])
+  }
+
+  // Book a call on `projectId`, with `line` as its note.
+  function bookCall(c, projectId, line) {
+    if (!Model.byId(db.projects, projectId)) return
+    mutate(function(d) {
+      Model.addMinutes(d, c.day, projectId, c.minutes)
+      if (String(line || "").trim()) Model.addNote(d, c.day, projectId, line)
+      if (c.meeting) d.calendar.decided[c.meeting.uid] = "confirmed"
+    })
+    if (callPrompt && callPrompt.from === c.from) callPrompt = null
+  }
+
+  function closeCallPrompt() { callPrompt = null }
+
+  // Projects picked for one-off meetings, until they are booked. Not saved.
+  property var meetingPicks: ({})
+  function pickMeetingProject(uid, projectId) {
+    var p = Object.assign({}, meetingPicks)
+    p[uid] = projectId
+    meetingPicks = p
+  }
+
+  // Start the timer for a meeting that is going on, from its start or from
+  // now (meetingTimerFrom). The meeting is then the timer's, so it is not
+  // asked about once it ends.
+  function startMeeting(m, projectId) {
+    var pid = projectId || m.projectId
+    if (!Model.byId(db.projects, pid)) return
+    var mark = function(d) { d.calendar.decided[m.uid] = "timer" }
+    if (timer && timer.projectId === pid) { mutate(mark); return }
+    startTimer(pid, db.settings.meetingTimerFrom === "now" ? Date.now() : Math.min(m.start, Date.now()), mark)
   }
 
   function linkSeries(seriesId, projectId) {
@@ -392,6 +539,11 @@ Item {
         root.calendarNow = Date.now()
         root.events = parsed && Array.isArray(parsed.events) ? parsed.events : []
         root.calendarAvailable = true
+        // Decisions on one-offs are dropped once the calendar no longer has them.
+        if (root.loaded && !root.calendarPruned && root.events.length) {
+          root.calendarPruned = true
+          root.mutate(function(d) { Model.pruneDecided(d, Date.now(), root.events) })
+        }
       } catch (e) {
         root.calendarAvailable = false
       }
@@ -410,7 +562,7 @@ Item {
   }
 
   Timer {
-    interval: 300000
+    interval: 60000
     running: true
     repeat: true
     onTriggered: root.calendarNow = Date.now()
@@ -462,11 +614,21 @@ Item {
     function state(): string {
       return JSON.stringify({
         demo: root.demo, loaded: root.loaded, today: root.today,
-        timer: root.timer, notePrompt: root.notePrompt,
+        timer: root.timer, notePrompt: root.notePrompt, callPrompt: root.callPrompt,
+        inCall: root.openSessions().length > 0,
         selectedProjectId: root.selectedProject ? root.selectedProject.id : null,
         entriesToday: root.db.entries[root.today] || {}, notesToday: root.db.notes[root.today] || {},
-        links: root.db.calendar.links
+        links: root.db.calendar.links,
+        suggestions: root.suggestions.map(function(m) { return { uid: m.uid, projectId: m.projectId } }),
+        currentMeetings: root.currentMeetings.map(function(m) { return { uid: m.uid, projectId: m.projectId } })
       })
+    }
+
+    // From the On Air plugin's hook (hooks/on-the-clock.sh):
+    //   start <camera|mic|screen> <app> <start> | stop <...> <app> <start> <end>
+    // Times in epoch seconds.
+    function onAir(event: string, sensor: string, app: string, start: string, end: string): string {
+      return root.onAirEvent(event, sensor, app, start, end)
     }
 
     function status(): string {
