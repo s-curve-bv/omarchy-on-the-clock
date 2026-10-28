@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "s-curve.on-the-clock",
   "name": "On the Clock",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "S-Curve",
   "license": "MIT",
   "description": "Track billable hours from the bar: customers, rates, projects with budgets, a quarter-hour week grid, a timer with idle check, monthly and yearly income targets, and recurring calendar meetings to confirm",
