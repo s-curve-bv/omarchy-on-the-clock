@@ -16,6 +16,7 @@ Column {
   readonly property string today: service ? service.today : Model.dateKey(new Date())
   readonly property string currency: db.settings.currency
   readonly property var workDays: db.settings.workDays
+  readonly property var holidayWeeks: db.settings.holidayWeeks
 
   property string month: Model.monthKey(today)
   readonly property string year: month.slice(0, 4)
@@ -24,10 +25,10 @@ Column {
   readonly property var mTotals: Model.totals(db, mRange[0], mRange[1])
   readonly property var yTotals: Model.totals(db, yRange[0], yRange[1])
   readonly property var allTotals: Model.totals(db, null, null)
-  readonly property real mTarget: Number(db.targets.month) || 0
+  readonly property real mTarget: Model.monthTarget(db, month)
   readonly property real yTarget: Number(db.targets.year) || 0
-  readonly property var mPace: Model.pace(mTotals.income, mTarget, mRange[0], mRange[1], today, workDays)
-  readonly property var yPace: Model.pace(yTotals.income, yTarget, yRange[0], yRange[1], today, workDays)
+  readonly property var mPace: Model.pace(mTotals.income, mTarget, mRange[0], mRange[1], today, workDays, holidayWeeks)
+  readonly property var yPace: Model.pace(yTotals.income, yTarget, yRange[0], yRange[1], today, workDays, holidayWeeks)
 
   readonly property var monthIncomes: {
     var out = []
@@ -56,6 +57,7 @@ Column {
       return "Ended at " + money(actual) + ", " + pct(actual, target) + " of the target ("
            + (end >= 0 ? money(end) + " above" : money(-end) + " short") + ")."
     }
+    if (p.total === 0) return "No work days this " + unit + ": it's all holiday."
     if (p.elapsed === 0) return "This " + unit + " hasn't started yet."
     if (actual >= target) return "Target reached: " + money(actual) + " so far, " + money(actual - target) + " above the target."
     var diff = p.projected - target
@@ -64,9 +66,11 @@ Column {
   }
 
   function needed(p, actual, target) {
-    if (target <= 0 || p.done || actual >= target || p.remaining <= 0) return ""
+    // Holidays make the day counts fractional; whole days read better.
+    var days = Math.round(p.remaining)
+    if (target <= 0 || p.done || actual >= target || days <= 0) return ""
     return "To reach " + money(target) + ", bill " + money(p.neededPerDay) + " per work day for the "
-         + p.remaining + (p.remaining === 1 ? " work day" : " work days") + " left."
+         + days + (days === 1 ? " work day" : " work days") + " left."
   }
 
   function behind(p, actual, target) {

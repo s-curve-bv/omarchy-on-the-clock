@@ -28,7 +28,8 @@ with a few customers, a handful of projects and a couple of hourly rates.
   or skipped, because a meeting doesn't always happen: occurrences of
   recurring meetings you linked to a project, and one-off meetings with a
   project picker. Older ones can be booked from the Calendar tab.
-- **Income and targets.** Monthly and yearly income targets, a marker for
+- **Income and targets.** A yearly income target spread over the months by
+  work days and holiday weeks (or a fixed monthly one), a marker for
   where you should be today, and a plain forecast: where your pace ends up
   and what it takes per work day to make it.
 - **Customers, projects and rates.** Per project an hourly rate, billable or
@@ -70,11 +71,16 @@ else you type becomes a line in that day's notes.
   where you should be today and plain-language forecasts: where your pace
   ends up and what it takes per work day to reach the target. Below it a
   monthly chart and hours, income and budget use per customer and project.
+  With a year target, each month's target is its share of the year by work
+  days, and holiday weeks set per month in Admin are left out: with two
+  weeks off in December, December's target is lower and the year forecast
+  doesn't count on a full December. Without a year target, a fixed monthly
+  target applies.
 - **Calendar**: *Meetings* lists the last 31 days, to book or skip what
   Week no longer asks about. *Recurring* links recurring meetings to a
   project, filtered by all, linked or not linked. Declined and cancelled
   meetings are skipped.
-- **Admin**: income targets, hourly rates, customers with their projects
+- **Admin**: income targets and holiday weeks, hourly rates, customers with their projects
   (rate, billable or internal, optional budget in hours or money), settings
   and backup. Finished projects and former customers can be archived: they
   disappear from the lists but keep counting in the months they were used.

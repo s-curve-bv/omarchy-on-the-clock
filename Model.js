@@ -8,12 +8,14 @@
 //                 budgetType: "none" | "hours" | "money", budget }]
 //   entries:   { "YYYY-MM-DD": { projectId: minutes } }
 //   notes:     { "YYYY-MM-DD": { projectId: ["what was done", ...] } }
-//   targets:   { month, year }                      income, excl. VAT
+//   targets:   { month, year }                      income, excl. VAT; with a year
+//                                                   target, months are derived from it
 //   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to},
 //                       call }                       call: started by a call, which stops it
 //   calendar:  { links: { seriesId: projectId },
 //                decided: { uid: "confirmed" | "dismissed" | "timer" } }   timer: the timer covered it
 //   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache,
+//                holidayWeeks: [Jan..Dec],            weeks off per month, for the forecast
 //                lookbackDays,                        Calendar tab: meetings to browse
 //                askWorkDays, askOneOff,              Week: which meetings it asks about
 //                guessProject, skipTimerCovered, meetingTimerFrom: "start" | "now",
@@ -125,6 +127,7 @@ function defaults() {
       currency: "EUR",
       idleMinutes: 10,
       workDays: [1, 2, 3, 4, 5],
+      holidayWeeks: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       calendarCache: "~/.cache/blacksheep.calendar/events.json",
       lookbackDays: 31,
       askWorkDays: 2,
@@ -266,12 +269,48 @@ function workDaysBetween(from, to, workDays) {
   return n
 }
 
+// Share of a month's work days that are actually worked, after
+// `holidayWeeks[month - 1]` weeks off. Only the number of weeks is known, not
+// which days, so every work day of the month counts for that share.
+function workShare(mkey, workDays, holidayWeeks) {
+  var weeks = Number((holidayWeeks || [])[Number(mkey.slice(5, 7)) - 1]) || 0
+  if (weeks <= 0) return 1
+  var r = monthRange(mkey)
+  var total = workDaysBetween(r[0], r[1], workDays)
+  var off = weeks * (workDays || [1, 2, 3, 4, 5]).length
+  return total > 0 ? Math.max(0, total - off) / total : 0
+}
+
+// Work days between `from` and `to`, holidays taken off: a December with
+// two weeks off counts each work day as about half a day.
+function workingDaysBetween(from, to, workDays, holidayWeeks) {
+  var n = 0, mkey = "", share = 1
+  for (var k = from; k <= to; k = addDays(k, 1)) {
+    if (!isWorkDay(k, workDays)) continue
+    if (monthKey(k) !== mkey) { mkey = monthKey(k); share = workShare(mkey, workDays, holidayWeeks) }
+    n += share
+  }
+  return n
+}
+
+// The income target for month `mkey`. A year target is spread over the
+// months by their work days after holidays, so a month with two weeks off
+// asks less. Without one, the fixed monthly target applies.
+function monthTarget(data, mkey) {
+  var year = Number(data.targets.year) || 0
+  if (year <= 0) return Number(data.targets.month) || 0
+  var s = data.settings, y = yearRange(mkey.slice(0, 4)), m = monthRange(mkey)
+  var total = workingDaysBetween(y[0], y[1], s.workDays, s.holidayWeeks)
+  return total > 0 ? year * workingDaysBetween(m[0], m[1], s.workDays, s.holidayWeeks) / total : 0
+}
+
 // Where the period ends up at the current rate. `today` counts as elapsed.
-function pace(actual, target, from, to, today, workDays) {
-  var total = workDaysBetween(from, to, workDays)
+// Day counts are fractional when `holidayWeeks` takes days off.
+function pace(actual, target, from, to, today, workDays, holidayWeeks) {
+  var total = workingDaysBetween(from, to, workDays, holidayWeeks)
   if (today < from) return { projected: 0, total: total, elapsed: 0, remaining: total, neededPerDay: total ? target / total : 0, done: false }
   if (today > to) return { projected: actual, total: total, elapsed: total, remaining: 0, neededPerDay: 0, done: true }
-  var elapsed = workDaysBetween(from, today, workDays)
+  var elapsed = workingDaysBetween(from, today, workDays, holidayWeeks)
   var remaining = total - elapsed
   var projected = elapsed > 0 ? actual / elapsed * total : actual
   var neededPerDay = remaining > 0 ? Math.max(0, target - actual) / remaining : 0
@@ -514,7 +553,8 @@ if (typeof module !== "undefined") {
     rateFor: rateFor, isBillable: isBillable, minutesOn: minutesOn, setMinutes: setMinutes,
     notesOn: notesOn, setNotes: setNotes, addNote: addNote, meetingsDuring: meetingsDuring,
     addMinutes: addMinutes, totals: totals, budgetUsage: budgetUsage, isWorkDay: isWorkDay,
-    workDaysBetween: workDaysBetween, pace: pace, timerElapsedMinutes: timerElapsedMinutes,
+    workDaysBetween: workDaysBetween, workShare: workShare,
+    workingDaysBetween: workingDaysBetween, monthTarget: monthTarget, pace: pace, timerElapsedMinutes: timerElapsedMinutes,
     stopTimer: stopTimer, recurringSeries: recurringSeries, suggestions: suggestions,
     pruneDecided: pruneDecided, askSince: askSince, guessProject: guessProject,
     meetingProject: meetingProject, currentMeetings: currentMeetings, pastMeetings: pastMeetings,

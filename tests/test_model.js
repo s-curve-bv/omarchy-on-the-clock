@@ -73,6 +73,42 @@ test("pace", () => {
   assert.equal(Model.pace(5, 10, "2026-09-01", "2026-09-30", "2026-10-23").done, true);
 });
 
+test("holiday weeks take work days out of the forecast", () => {
+  const wd = [1, 2, 3, 4, 5];
+  const holidays = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+  // December 2026: 23 work days, 10 of them off.
+  assert.equal(Model.workShare("2026-12", wd, holidays), 13 / 23);
+  assert.equal(Model.workShare("2026-11", wd, holidays), 1);
+  assert.equal(Model.workShare("2026-12", wd, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6]), 0);
+  assert.equal(Model.workShare("2026-12", wd, undefined), 1);
+
+  // The year: 261 work days, 251 without December's two weeks.
+  assert.equal(Model.pace(0, 1, "2026-01-01", "2026-12-31", "2026-10-30", wd).total, 261);
+  const y = Model.pace(100000, 120000, "2026-01-01", "2026-12-31", "2026-10-30", wd, holidays);
+  assert.ok(Math.abs(y.total - 251) < 1e-9);
+  assert.equal(y.elapsed, 217);
+  assert.ok(Math.abs(y.projected - 100000 / 217 * 251) < 1e-6);
+  assert.ok(Math.abs(y.neededPerDay - 20000 / 34) < 1e-6);
+
+  // In December itself each work day counts for 13/23: same pace, but more per day needed.
+  const m = Model.pace(5000, 10000, "2026-12-01", "2026-12-31", "2026-12-04", wd, holidays);
+  assert.ok(Math.abs(m.remaining - 19 * 13 / 23) < 1e-9);
+  assert.ok(Math.abs(m.neededPerDay - 5000 / (19 * 13 / 23)) < 1e-6);
+});
+
+test("month targets follow the year target and holidays", () => {
+  const d = Model.normalize({ targets: { month: 9000, year: 0 } });
+  assert.equal(Model.monthTarget(d, "2026-12"), 9000);
+  d.targets.year = 120000;
+  d.settings.holidayWeeks = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+  // 251 working days in 2026: November has 21, December 13.
+  assert.ok(Math.abs(Model.monthTarget(d, "2026-11") - 120000 * 21 / 251) < 1e-6);
+  assert.ok(Math.abs(Model.monthTarget(d, "2026-12") - 120000 * 13 / 251) < 1e-6);
+  let sum = 0;
+  for (let m = 1; m <= 12; m++) sum += Model.monthTarget(d, "2026-" + String(m).padStart(2, "0"));
+  assert.ok(Math.abs(sum - 120000) < 1e-6);
+});
+
 test("timer books rounded minutes on the start day", () => {
   const d = sample();
   const start = new Date(2026, 9, 22, 23, 30).getTime();

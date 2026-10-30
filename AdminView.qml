@@ -219,17 +219,11 @@ Column {
 
     PanelSectionHeader { text: "INCOME TARGETS (EXCL. VAT)"; foreground: view.panel.fg; fontFamily: view.panel.font }
 
+    // With a year target, each month's target follows from it and the work
+    // days in that month; the fixed monthly target is only for without one.
     Row {
       spacing: Style.spacing.lg
-      Label { text: "Per month"; width: view.labelW }
-      Field {
-        width: Style.space(140)
-        value: String(view.db.targets.month || "")
-        placeholderText: "e.g. 10000"
-        validator: DoubleValidator { bottom: 0 }
-        onCommit: view.service.setTarget("month", view.num(text))
-      }
-      Label { text: "Per year"; leftPadding: Style.spacing.xxl }
+      Label { text: "Per year"; width: view.labelW }
       Field {
         width: Style.space(140)
         value: String(view.db.targets.year || "")
@@ -242,6 +236,68 @@ Column {
         text: "Year = 12 × month"
         fontFamily: view.panel.font
         onClicked: view.service.setTarget("year", view.db.targets.month * 12)
+      }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Per month"; width: view.labelW }
+      Field {
+        visible: !(view.db.targets.year > 0)
+        width: Style.space(140)
+        value: String(view.db.targets.month || "")
+        placeholderText: "e.g. 10000"
+        validator: DoubleValidator { bottom: 0 }
+        onCommit: view.service.setTarget("month", view.num(text))
+      }
+      Label {
+        visible: view.db.targets.year > 0
+        readonly property string month: Model.monthKey(view.service ? view.service.today : Model.dateKey(new Date()))
+        text: "from the year, by work days after holidays: "
+              + Model.fmtMoney(Model.monthTarget(view.db, month), view.currency) + " in "
+              + Qt.formatDate(Model.parseKey(month + "-01"), "MMMM")
+      }
+    }
+
+    // Weeks off per month. The forecast leaves them out, so a December with
+    // two weeks off doesn't expect a full month of income.
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Holiday weeks"; width: view.labelW; anchors.verticalCenter: undefined }
+      Column {
+        spacing: Style.spacing.sm
+        Grid {
+          columns: 4
+          columnSpacing: Style.spacing.lg
+          rowSpacing: Style.spacing.sm
+          Repeater {
+            model: 12
+            Row {
+              id: monthCell
+              required property int index
+              spacing: Style.spacing.sm
+              Label {
+                text: Qt.locale().standaloneMonthName(monthCell.index, Locale.ShortFormat)
+                width: Style.space(36)
+              }
+              Field {
+                width: Style.space(50)
+                value: String((view.db.settings.holidayWeeks || [])[monthCell.index] || 0)
+                validator: DoubleValidator { bottom: 0; top: 5 }
+                onCommit: {
+                  var weeks = (view.db.settings.holidayWeeks || []).slice()
+                  for (var i = 0; i < 12; i++) weeks[i] = Number(weeks[i]) || 0
+                  weeks[monthCell.index] = Math.min(5, Math.max(0, view.num(text)))
+                  view.service.setSetting("holidayWeeks", weeks)
+                }
+              }
+            }
+          }
+        }
+        Label {
+          anchors.verticalCenter: undefined
+          text: "weeks off per month, left out of the forecast (halves are fine: 0.5)"
+        }
       }
     }
   }

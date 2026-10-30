@@ -41,7 +41,7 @@ BarWidget {
     if (barShows === "hours") return prefix + Model.fmtHours(s.monthTotals.minutes)
     if (barShows === "income") {
       const cur = s.db.settings.currency
-      const target = s.db.targets.month
+      const target = Model.monthTarget(s.db, Model.monthKey(s.today))
       return prefix + Model.fmtMoneyShort(s.monthTotals.income, cur) + (target > 0 ? "/" + Model.fmtMoneyShort(target, cur).replace(/^\D+/, "") : "")
     }
     if (barShows === "icon") return prefix
