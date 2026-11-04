@@ -26,7 +26,10 @@ TestCase {
       ],
       entries: {}, settings: {}
     }
-    return Object.assign(d, extra || {})
+    Object.assign(d, extra || {})
+    // Every hour is work time, so the call tests pass whenever they run.
+    d.settings = Object.assign({ workDays: [1, 2, 3, 4, 5, 6, 7], workStart: "00:00", workEnd: "24:00" }, d.settings)
+    return d
   }
 
   function start(data) {
@@ -318,6 +321,26 @@ TestCase {
     const s = start(sample())
     s.onAirEvent("stop", "camera", "zoom", sec(Date.now() - 20 * 60000), sec(Date.now()))
     compare(s.callPrompt.minutes, 15)
+  }
+
+  function test_callsOutsideWorkHoursAreIgnored() {
+    const today = (new Date().getDay() || 7)
+    const others = [1, 2, 3, 4, 5, 6, 7].filter(d => d !== today)
+    const s = start(sample({ settings: { workDays: others } }))
+    compare(s.onAirEvent("start", "mic", "zoom", sec(Date.now() - 20 * 60000), ""), "outside work hours")
+    compare(s.onAirEvent("stop", "mic", "zoom", sec(Date.now() - 20 * 60000), sec(Date.now())), "outside work hours")
+    compare(s.callPrompt, null)
+  }
+
+  function test_seriesCanBeLinkedIgnoredAndUnlinked() {
+    const s = start(sample())
+    s.linkSeries("lunch", "ignore")
+    compare(saved().calendar.ignored, { lunch: true })
+    s.linkSeries("lunch", "p1")
+    compare(saved().calendar.ignored, {})
+    compare(saved().calendar.links, { lunch: "p1" })
+    s.linkSeries("lunch", "")
+    compare(saved().calendar.links, {})
   }
 
   function test_onAirCanBeTurnedOff() {

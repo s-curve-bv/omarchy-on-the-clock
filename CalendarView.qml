@@ -6,7 +6,8 @@ import "Model.js" as Model
 
 // Meetings from Datebook's calendar cache. "Meetings" browses the last
 // lookbackDays to book or skip what Week no longer asks about; "Recurring"
-// links a series to a project, so Week asks about each occurrence.
+// links a series to a project, so Week asks about each occurrence, or
+// ignores it as not work.
 Column {
   id: view
 
@@ -15,7 +16,7 @@ Column {
 
   readonly property var db: service ? service.db : Model.defaults()
   property string section: "meetings"   // meetings | series
-  property string filter: "all"         // all | linked | unlinked
+  property string filter: "all"         // all | linked | unlinked | ignored
   property string meetingFilter: "waiting"   // waiting | all
 
   readonly property var meetings: {
@@ -24,17 +25,16 @@ Column {
   }
 
   readonly property var projectOptions: {
-    var opts = [{ value: "", label: "Not linked" }]
-    var ps = db.projects.filter(function(p) { return !p.archived })
+    var opts = []
+    var ps = service ? service.activeProjects : []
     for (var i = 0; i < ps.length; i++) opts.push({ value: ps[i].id, label: service.projectLabel(ps[i]) })
-    opts.sort(function(a, b) { return a.value === "" ? -1 : b.value === "" ? 1 : a.label.localeCompare(b.label) })
-    return opts
+    return [{ value: "", label: "Not linked" }, { value: "ignore", label: "Ignore: not work" }].concat(opts)
   }
 
   readonly property var shown: {
     var all = service ? service.series : []
     if (filter === "all") return all
-    return all.filter(function(s) { return !!view.db.calendar.links[s.seriesId] === (view.filter === "linked") })
+    return all.filter(function(s) { return view.seriesState(s.seriesId) === view.filter })
   }
 
   // The project dropdown fits the longest "Customer · Project", up to half
@@ -49,6 +49,10 @@ Column {
     id: metrics
     font.family: view.panel ? view.panel.font : Style.font.family
     font.pixelSize: Style.font.body
+  }
+
+  function seriesState(id) {
+    return db.calendar.links[id] ? "linked" : (db.calendar.ignored || {})[id] ? "ignored" : "unlinked"
   }
 
   function when(ms) { return ms ? Qt.formatDate(new Date(ms), "ddd d MMM") : "–" }
@@ -72,7 +76,8 @@ Column {
         ? "Meetings of the last " + view.db.settings.lookbackDays + " days. Week asks about the last "
           + view.db.settings.askWorkDays + " work days; book or skip older ones here. Declined and cancelled meetings are skipped."
         : "Link a recurring meeting to a project. Once an occurrence has ended it appears at the top of the Week tab, "
-          + "where you book or skip it. Unlinked recurring meetings are never asked about."
+          + "where you book or skip it. Unlinked recurring meetings are never asked about. Ignore the ones that aren't work, "
+          + "like lunch: they're left out of Meetings and calls too. Meetings shown as free in your calendar are ignored unless linked."
     color: view.panel.dim
     font.family: view.panel.font
     font.pixelSize: Style.font.body
@@ -133,7 +138,8 @@ Column {
     options: [
       { value: "all", label: "All" },
       { value: "linked", label: "Linked" },
-      { value: "unlinked", label: "Not linked" }
+      { value: "unlinked", label: "Not linked" },
+      { value: "ignored", label: "Ignored" }
     ]
     value: view.filter
     onChanged: function(v) { view.filter = v }
@@ -141,7 +147,8 @@ Column {
 
   Text {
     visible: view.section === "series" && view.service && view.service.calendarAvailable && view.shown.length === 0
-    text: view.filter === "linked" ? "No meetings linked yet." : view.filter === "unlinked" ? "Every recurring meeting is linked." : "No recurring meetings found."
+    text: view.filter === "linked" ? "No meetings linked yet." : view.filter === "unlinked" ? "Every recurring meeting is linked or ignored."
+        : view.filter === "ignored" ? "No meetings ignored." : "No recurring meetings found."
     color: view.panel.dim
     font.family: view.panel.font
     font.pixelSize: Style.font.body
@@ -159,6 +166,7 @@ Column {
         id: srow
         required property var modelData
         readonly property string linked: view.db.calendar.links[modelData.seriesId] || ""
+        readonly property bool ignored: !!(view.db.calendar.ignored || {})[modelData.seriesId]
         width: view.width
         height: Math.max(info.implicitHeight, Style.spacing.controlHeight) + Style.spacing.xs
 
@@ -174,7 +182,7 @@ Column {
             elide: Text.ElideRight
             textFormat: Text.PlainText
             text: srow.modelData.title
-            color: srow.linked ? view.panel.accent : view.panel.fg
+            color: srow.linked ? view.panel.accent : srow.ignored ? view.panel.dim : view.panel.fg
             font.family: view.panel.font
             font.pixelSize: Style.font.body
           }
@@ -194,7 +202,7 @@ Column {
           showLabel: false
           fontFamily: view.panel.font
           options: view.projectOptions
-          value: srow.linked
+          value: srow.ignored ? "ignore" : srow.linked
           onChanged: function(v) { view.service.linkSeries(srow.modelData.seriesId, v) }
           Connections { target: view.panel; function onScrolled() { picker.close() } }
         }

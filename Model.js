@@ -3,18 +3,19 @@
 //
 // Data shape (hours.json):
 //   rates:     [{ id, name, amount }]
-//   customers: [{ id, name, archived }]
+//   customers: [{ id, name, archived }]               in the order you put them
 //   projects:  [{ id, customerId, name, rateId, billable, archived,
-//                 budgetType: "none" | "hours" | "money", budget }]
+//                 budgetType: "none" | "hours" | "money", budget }]   same
 //   entries:   { "YYYY-MM-DD": { projectId: minutes } }
 //   notes:     { "YYYY-MM-DD": { projectId: ["what was done", ...] } }
 //   targets:   { month, year }                      income, excl. VAT; with a year
 //                                                   target, months are derived from it
 //   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to},
 //                       call }                       call: started by a call, which stops it
-//   calendar:  { links: { seriesId: projectId },
+//   calendar:  { links: { seriesId: projectId }, ignored: { seriesId: true },   not work
 //                decided: { uid: "confirmed" | "dismissed" | "timer" } }   timer: the timer covered it
 //   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache,
+//                workStart, workEnd: "HH:MM",         work hours: calls, today's share
 //                holidayWeeks: [Jan..Dec],            weeks off per month, for the forecast
 //                lookbackDays,                        Calendar tab: meetings to browse
 //                askWorkDays, askOneOff,              Week: which meetings it asks about
@@ -114,7 +115,7 @@ function uid(prefix) {
 
 function defaults() {
   return {
-    version: 1,
+    version: 2,
     rates: [],
     customers: [],
     projects: [],
@@ -122,11 +123,13 @@ function defaults() {
     notes: {},
     targets: { month: 0, year: 0 },
     timer: null,
-    calendar: { links: {}, decided: {} },
+    calendar: { links: {}, ignored: {}, decided: {} },
     settings: {
       currency: "EUR",
       idleMinutes: 10,
       workDays: [1, 2, 3, 4, 5],
+      workStart: "09:00",
+      workEnd: "18:00",
       holidayWeeks: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       calendarCache: "~/.cache/blacksheep.calendar/events.json",
       lookbackDays: 31,
@@ -155,7 +158,16 @@ function normalize(raw) {
   out.settings = Object.assign({}, d.settings, raw.settings || {})
   out.calendar = Object.assign({}, d.calendar, raw.calendar || {})
   out.calendar.links = out.calendar.links || {}
+  out.calendar.ignored = out.calendar.ignored || {}
   out.calendar.decided = out.calendar.decided || {}
+  // Before version 2 lists were sorted by name on screen; that becomes
+  // their order, which you change in Admin from then on.
+  if (!(Number(raw.version) >= 2)) {
+    var byName = function(a, b) { return String(a.name).localeCompare(String(b.name)) }
+    out.customers = out.customers.slice().sort(byName)
+    out.projects = out.projects.slice().sort(byName)
+    out.version = 2
+  }
   // Notes used to be one string per cell.
   for (var nk in out.notes)
     for (var np in out.notes[nk])
@@ -170,6 +182,29 @@ function parse(text) {
 function byId(list, id) {
   for (var i = 0; i < (list || []).length; i++) if (list[i].id === id) return list[i]
   return null
+}
+
+// Projects grouped by customer, both in their own order.
+function orderedProjects(data) {
+  var out = []
+  for (var i = 0; i < data.customers.length; i++)
+    for (var j = 0; j < data.projects.length; j++)
+      if (data.projects[j].customerId === data.customers[i].id) out.push(data.projects[j])
+  // Projects of a customer that no longer exists go last.
+  for (var k = 0; k < data.projects.length; k++)
+    if (!byId(data.customers, data.projects[k].customerId)) out.push(data.projects[k])
+  return out
+}
+
+// Mutates `data`: moves item `id` of `list` ("customers" or "projects") to
+// just before `targetId`, or just after it with `after`.
+function moveItem(data, list, id, targetId, after) {
+  var arr = data[list]
+  var item = byId(arr, id)
+  if (!item || id === targetId || !byId(arr, targetId)) return
+  arr.splice(arr.indexOf(item), 1)
+  var t = arr.indexOf(byId(arr, targetId))
+  arr.splice(after ? t + 1 : t, 0, item)
 }
 
 function rateFor(data, project) {
@@ -263,6 +298,37 @@ function isWorkDay(key, workDays) {
   return (workDays || [1, 2, 3, 4, 5]).indexOf(dow) !== -1
 }
 
+// "HH:MM" as minutes since midnight; null when it isn't a time.
+function clockMinutes(hhmm) {
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim())
+  if (!m || Number(m[1]) > 24 || Number(m[2]) > 59) return null
+  return Math.min(24 * 60, Number(m[1]) * 60 + Number(m[2]))
+}
+
+// Work hours from the settings as [start, end] in minutes since midnight;
+// the whole day when they are missing or the wrong way round.
+function workHours(settings) {
+  var from = clockMinutes(settings && settings.workStart)
+  var to = clockMinutes(settings && settings.workEnd)
+  if (from === null || to === null || to <= from) return [0, 24 * 60]
+  return [from, to]
+}
+
+// Whether `ms` falls on a work day, within work hours.
+function isWorkTime(ms, settings) {
+  var d = new Date(ms)
+  if (!isWorkDay(dateKey(d), settings && settings.workDays)) return false
+  var h = workHours(settings), m = d.getHours() * 60 + d.getMinutes()
+  return m >= h[0] && m < h[1]
+}
+
+// How much of today's work hours has passed at `ms`, from 0 to 1.
+function workDayDone(ms, settings) {
+  var d = new Date(ms)
+  var h = workHours(settings), m = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
+  return Math.min(1, Math.max(0, (m - h[0]) / (h[1] - h[0])))
+}
+
 function workDaysBetween(from, to, workDays) {
   var n = 0
   for (var k = from; k <= to; k = addDays(k, 1)) if (isWorkDay(k, workDays)) n++
@@ -304,17 +370,20 @@ function monthTarget(data, mkey) {
   return total > 0 ? year * workingDaysBetween(m[0], m[1], s.workDays, s.holidayWeeks) / total : 0
 }
 
-// Where the period ends up at the current rate. `today` counts as elapsed.
-// Day counts are fractional when `holidayWeeks` takes days off.
-function pace(actual, target, from, to, today, workDays, holidayWeeks) {
+// Where the period ends up at the current rate. Of `today`, the share
+// `todayDone` (0..1, default all of it) counts as elapsed. Day counts are
+// fractional when `holidayWeeks` takes days off or today is under way.
+function pace(actual, target, from, to, today, workDays, holidayWeeks, todayDone) {
   var total = workingDaysBetween(from, to, workDays, holidayWeeks)
-  if (today < from) return { projected: 0, total: total, elapsed: 0, remaining: total, neededPerDay: total ? target / total : 0, done: false }
-  if (today > to) return { projected: actual, total: total, elapsed: total, remaining: 0, neededPerDay: 0, done: true }
-  var elapsed = workingDaysBetween(from, today, workDays, holidayWeeks)
+  if (today < from) return { projected: 0, total: total, elapsed: 0, remaining: total, neededPerDay: total ? target / total : 0, started: false, done: false }
+  if (today > to) return { projected: actual, total: total, elapsed: total, remaining: 0, neededPerDay: 0, started: true, done: true }
+  var done = todayDone === undefined ? 1 : todayDone
+  var elapsed = workingDaysBetween(from, addDays(today, -1), workDays, holidayWeeks)
+              + workingDaysBetween(today, today, workDays, holidayWeeks) * done
   var remaining = total - elapsed
   var projected = elapsed > 0 ? actual / elapsed * total : actual
   var neededPerDay = remaining > 0 ? Math.max(0, target - actual) / remaining : 0
-  return { projected: projected, total: total, elapsed: elapsed, remaining: remaining, neededPerDay: neededPerDay, done: false }
+  return { projected: projected, total: total, elapsed: elapsed, remaining: remaining, neededPerDay: neededPerDay, started: true, done: false }
 }
 
 function timerElapsedMinutes(timer, nowMs) {
@@ -350,11 +419,25 @@ function usableEvent(e) {
   return !!e && !e.allDay && e.status !== "cancelled" && e.response !== "declined"
 }
 
+// Not work, so never a meeting to book: a series marked as ignored (lunch,
+// a block to keep the calendar free), or an event shown as free that isn't
+// linked to a project.
+function ignoredEvent(data, e) {
+  var series = e && e.seriesId
+  if (series && data.calendar.ignored && data.calendar.ignored[series]) return true
+  return !!e && e.busy === false && !(series && data.calendar.links[series])
+}
+
+// A calendar event that counts as a meeting.
+function meetingEvent(data, e) {
+  return usableEvent(e) && !ignoredEvent(data, e)
+}
+
 // Meetings overlapping a stretch of time, e.g. while a timer ran; earliest
-// first.
-function meetingsDuring(events, fromMs, toMs) {
+// first. With `data`, ignored meetings are left out.
+function meetingsDuring(events, fromMs, toMs, data) {
   return (events || [])
-    .filter(function(e) { return usableEvent(e) && Date.parse(e.start) < toMs && Date.parse(e.end) > fromMs })
+    .filter(function(e) { return (data ? meetingEvent(data, e) : usableEvent(e)) && Date.parse(e.start) < toMs && Date.parse(e.end) > fromMs })
     .map(function(e) { return { uid: e.uid, title: e.title || "(no title)", start: Date.parse(e.start), end: Date.parse(e.end) } })
     .sort(function(a, b) { return a.start - b.start })
 }
@@ -429,7 +512,7 @@ function meetingProject(data, e, fallbackId) {
 // meetings that don't repeat. Recurring meetings that aren't linked are
 // never asked about: leaving them unlinked says they aren't work.
 function askable(data, e) {
-  if (!usableEvent(e)) return false
+  if (!meetingEvent(data, e)) return false
   if (e.recurring && e.seriesId) {
     var p = byId(data.projects, data.calendar.links[e.seriesId])
     return !!p && !p.archived
@@ -488,7 +571,7 @@ function pastMeetings(data, events, nowMs, fallbackId) {
   for (var i = 0; i < (events || []).length; i++) {
     var e = events[i]
     var start = Date.parse(e && e.start)
-    if (!usableEvent(e) || start > nowMs || start < since) continue
+    if (!meetingEvent(data, e) || start > nowMs || start < since) continue
     out.push(meetingRow(data, e, fallbackId))
   }
   out.sort(function(a, b) { return b.start - a.start })
@@ -514,7 +597,7 @@ function callOutcome(data, events, fromMs, toMs, fallbackId) {
   var best = null, bestOverlap = 0
   for (var i = 0; i < (events || []).length; i++) {
     var e = events[i]
-    if (!usableEvent(e)) continue
+    if (!meetingEvent(data, e)) continue
     var overlap = Math.min(toMs, Date.parse(e.end)) - Math.max(fromMs, Date.parse(e.start))
     if (overlap > bestOverlap) { best = e; bestOverlap = overlap }
   }
@@ -549,11 +632,12 @@ if (typeof module !== "undefined") {
     dateKey: dateKey, parseKey: parseKey, addDays: addDays, weekStart: weekStart, isoWeek: isoWeek,
     monthKey: monthKey, addMonths: addMonths, monthRange: monthRange, yearRange: yearRange,
     roundQuarter: roundQuarter, fmtHours: fmtHours, fmtMoney: fmtMoney, fmtMoneyShort: fmtMoneyShort,
-    uid: uid, defaults: defaults, normalize: normalize, parse: parse, byId: byId,
+    uid: uid, defaults: defaults, normalize: normalize, parse: parse, byId: byId, orderedProjects: orderedProjects, moveItem: moveItem,
     rateFor: rateFor, isBillable: isBillable, minutesOn: minutesOn, setMinutes: setMinutes,
-    notesOn: notesOn, setNotes: setNotes, addNote: addNote, meetingsDuring: meetingsDuring,
+    notesOn: notesOn, setNotes: setNotes, addNote: addNote, meetingsDuring: meetingsDuring, ignoredEvent: ignoredEvent,
     addMinutes: addMinutes, totals: totals, budgetUsage: budgetUsage, isWorkDay: isWorkDay,
-    workDaysBetween: workDaysBetween, workShare: workShare,
+    workDaysBetween: workDaysBetween, workShare: workShare, clockMinutes: clockMinutes,
+    workHours: workHours, isWorkTime: isWorkTime, workDayDone: workDayDone,
     workingDaysBetween: workingDaysBetween, monthTarget: monthTarget, pace: pace, timerElapsedMinutes: timerElapsedMinutes,
     stopTimer: stopTimer, recurringSeries: recurringSeries, suggestions: suggestions,
     pruneDecided: pruneDecided, askSince: askSince, guessProject: guessProject,

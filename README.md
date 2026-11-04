@@ -75,15 +75,23 @@ else you type becomes a line in that day's notes.
   days, and holiday weeks set per month in Admin are left out: with two
   weeks off in December, December's target is lower and the year forecast
   doesn't count on a full December. Without a year target, a fixed monthly
-  target applies.
+  target applies. Only the part of today's work hours that has passed
+  counts toward the pace, and less than a work day into a month there is no
+  forecast yet, just what it takes per work day.
 - **Calendar**: *Meetings* lists the last 31 days, to book or skip what
   Week no longer asks about. *Recurring* links recurring meetings to a
-  project, filtered by all, linked or not linked. Declined and cancelled
-  meetings are skipped.
+  project, or ignores the ones that aren't work, like a lunch block: those
+  are left out everywhere, calls included. Filter by all, linked, not
+  linked or ignored. Declined and cancelled meetings are skipped, and so
+  are meetings shown as free in your calendar, unless their series is
+  linked.
 - **Admin**: income targets and holiday weeks, hourly rates, customers with their projects
   (rate, billable or internal, optional budget in hours or money), settings
   and backup. Finished projects and former customers can be archived: they
   disappear from the lists but keep counting in the months they were used.
+  Customers and projects stay in the order you give them, everywhere: new
+  ones go at the end, and you move them with ↑ ↓ on a hovered row or by
+  dragging it.
 
 | Week with a running timer and notes | After stopping the timer | Admin |
 |---|---|---|
@@ -103,7 +111,7 @@ else you type becomes a line in that day's notes.
 | Esc | close the panel |
 
 With the mouse: click a cell for +0:15, right-click for −0:15, shift-click
-for ±1:00, or scroll over it.
+for ±1:00.
 
 ### Idle check
 
@@ -125,6 +133,8 @@ Which meetings Week asks about, and how, are settings in Admin:
 
 | Setting | Default | Does |
 |---|---|---|
+| Work days | Mon–Fri | Days that count for the forecast, for Week's questions and for calls |
+| Work hours | 9:00 to 18:00 | Calls only count when they start within these hours |
 | Week asks about | 2 work days | How far back Week asks, today included |
 | Calendar tab shows | 31 days | How far back the Meetings list in Calendar goes |
 | One-off meetings | on | Also ask about meetings that don't repeat. Recurring meetings are only asked about once linked |
@@ -156,7 +166,9 @@ alone isn't one. Then:
   (13:02–13:49)`. Enter books it, Esc skips it.
 - **A running timer is left alone**: it books the call's time already.
 
-Calls under 8 minutes book nothing. Without On Air or its hook nothing
+Only calls that start on a work day, within work hours (Admin → Settings,
+9:00 to 18:00 by default), count: a call in the evening or the weekend is
+left alone. Calls under 8 minutes book nothing. Without On Air or its hook nothing
 changes; both are switches in Admin.
 
 ## Data
@@ -208,7 +220,7 @@ Four layers of tests:
     tests/lint.sh                     # qmllint on all QML against Omarchy's real modules
     tests/qml.sh                      # the real Service and Week view, headless
 
-The QML tests run the plugin's own Service.qml and WeekView.qml with
+The QML tests run the plugin's own Service.qml, WeekView.qml and AdminView.qml with
 Omarchy's UI modules, and small stand-ins for Quickshell
 (`tests/qml/fakes`) with an in-memory file system. They check, among other
 things, that demo mode never writes the real file or starts a backup, that a

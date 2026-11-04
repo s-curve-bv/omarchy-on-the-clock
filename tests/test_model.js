@@ -109,6 +109,59 @@ test("month targets follow the year target and holidays", () => {
   assert.ok(Math.abs(sum - 120000) < 1e-6);
 });
 
+test("work hours", () => {
+  const s = { workDays: [1, 2, 3, 4, 5], workStart: "09:00", workEnd: "17:00" };
+  const at = (day, h, m) => new Date(2026, 10, day, h, m || 0).getTime();   // November 2026
+  assert.equal(Model.isWorkTime(at(2, 9), s), true);       // Monday
+  assert.equal(Model.isWorkTime(at(2, 8, 59), s), false);
+  assert.equal(Model.isWorkTime(at(2, 17), s), false);
+  assert.equal(Model.isWorkTime(at(1, 12), s), false);     // Sunday
+  assert.equal(Model.workDayDone(at(2, 8), s), 0);
+  assert.equal(Model.workDayDone(at(2, 13), s), 0.5);
+  assert.equal(Model.workDayDone(at(2, 20), s), 1);
+  // Missing or backwards hours: the whole day.
+  assert.deepEqual(Model.workHours({ workStart: "17:00", workEnd: "09:00" }), [0, 1440]);
+  assert.deepEqual(Model.workHours({}), [0, 1440]);
+  assert.equal(Model.clockMinutes("8:30"), 510);
+  assert.equal(Model.clockMinutes("noon"), null);
+});
+
+test("only the passed part of today counts toward the pace", () => {
+  const wd = [1, 2, 3, 4, 5];
+  // Monday 2 November, the month's first work day, nothing booked yet.
+  const first = Model.pace(0, 10000, "2026-11-01", "2026-11-30", "2026-11-02", wd, undefined, 0.25);
+  assert.equal(first.started, true);
+  assert.equal(first.elapsed, 0.25);
+  assert.ok(first.elapsed < 1);
+  // Halfway through the 10th work day with 9 days' worth booked.
+  const p = Model.pace(9000, 21000, "2026-11-01", "2026-11-30", "2026-11-13", wd, undefined, 0.5);
+  assert.equal(p.elapsed, 9.5);
+  assert.ok(Math.abs(p.projected - 9000 / 9.5 * 21) < 1e-9);
+  assert.equal(Model.pace(0, 1, "2026-12-01", "2026-12-31", "2026-11-13", wd).started, false);
+});
+
+test("customers and projects keep their own order", () => {
+  // Files from before version 2 start out sorted by name, as they showed.
+  const d = Model.normalize({
+    customers: [{ id: "c2", name: "Zeta" }, { id: "c1", name: "Acme" }],
+    projects: [{ id: "p2", customerId: "c1", name: "Web" }, { id: "p3", customerId: "c2", name: "App" }, { id: "p1", customerId: "c1", name: "Build" }]
+  });
+  assert.equal(d.version, 2);
+  assert.deepEqual(d.customers.map(c => c.id), ["c1", "c2"]);
+  assert.deepEqual(Model.orderedProjects(d).map(p => p.id), ["p1", "p2", "p3"]);
+  // From then on the order is kept as is.
+  assert.deepEqual(Model.normalize({ version: 2, customers: [{ id: "b", name: "B" }, { id: "a", name: "A" }] }).customers.map(c => c.id), ["b", "a"]);
+
+  Model.moveItem(d, "projects", "p2", "p1", false);
+  assert.deepEqual(Model.orderedProjects(d).map(p => p.id), ["p2", "p1", "p3"]);
+  Model.moveItem(d, "projects", "p2", "p1", true);
+  assert.deepEqual(Model.orderedProjects(d).map(p => p.id), ["p1", "p2", "p3"]);
+  Model.moveItem(d, "customers", "c2", "c1", false);
+  assert.deepEqual(Model.orderedProjects(d).map(p => p.id), ["p3", "p1", "p2"]);
+  Model.moveItem(d, "projects", "p1", "nope", false);   // unknown target: nothing moves
+  assert.deepEqual(d.projects.map(p => p.id), ["p3", "p1", "p2"]);
+});
+
 test("timer books rounded minutes on the start day", () => {
   const d = sample();
   const start = new Date(2026, 9, 22, 23, 30).getTime();
@@ -189,6 +242,28 @@ test("one-off meetings are asked about, recurring ones only when linked", () => 
   d.settings.askOneOff = true;
   d.settings.askWorkDays = 3;
   assert.equal(Model.suggestions(d, events, now, "p2").length, 3);
+});
+
+test("ignored series and free events are never meetings", () => {
+  const d = sample();
+  const now = at("2026-10-28", 13);
+  const lunch = meeting("lunch_20261028", "2026-10-28", 12, 60, { title: "Lunch", recurring: true, seriesId: "lunch" });
+  const block = meeting("focus", "2026-10-28", 9, 60, { title: "Focus", busy: false });
+  const real = meeting("one", "2026-10-28", 10, 60);
+  const events = [lunch, block, real];
+  assert.deepEqual(Model.pastMeetings(d, events, now).map(m => m.uid), ["lunch_20261028", "one"]);
+  d.calendar.ignored.lunch = true;
+  assert.deepEqual(Model.pastMeetings(d, events, now).map(m => m.uid), ["one"]);
+  assert.deepEqual(Model.suggestions(d, events, now).map(m => m.uid), ["one"]);
+  assert.deepEqual(Model.meetingsDuring(events, at("2026-10-28", 9), at("2026-10-28", 13), d).map(m => m.uid), ["one"]);
+  // A call over lunch isn't "Meeting: Lunch".
+  assert.equal(Model.callOutcome(d, events, at("2026-10-28", 12), at("2026-10-28", 12, 30)).meeting, null);
+  // A free event that is linked still counts.
+  const linkedFree = meeting("f_1", "2026-10-28", 8, 30, { busy: false, recurring: true, seriesId: "f" });
+  assert.equal(Model.ignoredEvent(d, linkedFree), true);
+  d.calendar.links.f = "p1";
+  assert.equal(Model.ignoredEvent(d, linkedFree), false);
+  assert.deepEqual(Model.normalize({}).calendar.ignored, {});
 });
 
 test("the project of a meeting: link, then title, then the fallback", () => {

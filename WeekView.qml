@@ -5,7 +5,8 @@ import qs.Ui
 import "Model.js" as Model
 
 // Projects x days of one week. Click a cell for +0:15, right-click for
-// -0:15, shift-click for +1:00, scroll to step. On top, the calendar
+// -0:15, shift-click for +1:00; scrolling scrolls the panel, it never
+// changes hours. On top, the calendar
 // meeting going on now, and the ones of the last work days to decide on.
 Column {
   id: view
@@ -32,13 +33,13 @@ Column {
   // they have hours this week.
   readonly property var rows: {
     var out = []
-    var customers = db.customers.slice().sort(function(a, b) { return a.name.localeCompare(b.name) })
+    var customers = db.customers
     var week = Model.totals(db, days[0], days[6])
     for (var i = 0; i < customers.length; i++) {
       var c = customers[i]
       var ps = db.projects.filter(function(p) {
         return p.customerId === c.id && ((!p.archived && !c.archived) || week.byProject[p.id])
-      }).sort(function(a, b) { return a.name.localeCompare(b.name) })
+      })
       if (!ps.length) continue
       out.push({ customer: c })
       for (var j = 0; j < ps.length; j++) out.push({ project: ps[j] })
@@ -360,10 +361,6 @@ Column {
                   var step = (mouse.modifiers & Qt.ShiftModifier) ? 60 : 15
                   view.service.addMinutes(cell.modelData, row.project.id, mouse.button === Qt.RightButton ? -step : step)
                 }
-                onWheel: function(wheel) {
-                  if (wheel.angleDelta.y !== 0)
-                    view.service.addMinutes(cell.modelData, row.project.id, wheel.angleDelta.y > 0 ? 15 : -15)
-                }
               }
             }
           }
@@ -482,7 +479,10 @@ Column {
         id: line
         required property int index
         readonly property string value: notes.lines[index] || ""
-        property Timer pending: Timer { interval: 800; onTriggered: line.save() }
+        // An emptied line is removed only when you leave it: removing it
+        // while you type would destroy the focused field and take the
+        // keyboard with it.
+        property Timer pending: Timer { interval: 800; onTriggered: if (line.text.trim()) line.save() }
 
         function save() {
           pending.stop()
@@ -523,7 +523,7 @@ Column {
 
   Text {
     text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · enter bar project · n note · space " + (view.isCurrentWeek ? "timer" : "back to this week")
-        + " · or click +0:15, right-click −0:15, scroll"
+        + " · or click +0:15, right-click −0:15"
     color: view.panel.faint
     font.family: view.panel.font
     font.pixelSize: Style.font.caption

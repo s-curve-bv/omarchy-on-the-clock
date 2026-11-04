@@ -14,6 +14,9 @@ Column {
 
   readonly property var db: service ? service.db : Model.defaults()
   readonly property string today: service ? service.today : Model.dateKey(new Date())
+  // Share of today's work hours that has passed: only that much of today
+  // counts toward the pace.
+  readonly property real todayDone: Model.workDayDone(service ? service.now : Date.now(), db.settings)
   readonly property string currency: db.settings.currency
   readonly property var workDays: db.settings.workDays
   readonly property var holidayWeeks: db.settings.holidayWeeks
@@ -27,8 +30,8 @@ Column {
   readonly property var allTotals: Model.totals(db, null, null)
   readonly property real mTarget: Model.monthTarget(db, month)
   readonly property real yTarget: Number(db.targets.year) || 0
-  readonly property var mPace: Model.pace(mTotals.income, mTarget, mRange[0], mRange[1], today, workDays, holidayWeeks)
-  readonly property var yPace: Model.pace(yTotals.income, yTarget, yRange[0], yRange[1], today, workDays, holidayWeeks)
+  readonly property var mPace: Model.pace(mTotals.income, mTarget, mRange[0], mRange[1], today, workDays, holidayWeeks, todayDone)
+  readonly property var yPace: Model.pace(yTotals.income, yTarget, yRange[0], yRange[1], today, workDays, holidayWeeks, todayDone)
 
   readonly property var monthIncomes: {
     var out = []
@@ -58,8 +61,10 @@ Column {
            + (end >= 0 ? money(end) + " above" : money(-end) + " short") + ")."
     }
     if (p.total === 0) return "No work days this " + unit + ": it's all holiday."
-    if (p.elapsed === 0) return "This " + unit + " hasn't started yet."
+    if (!p.started) return "This " + unit + " hasn't started yet."
     if (actual >= target) return "Target reached: " + money(actual) + " so far, " + money(actual - target) + " above the target."
+    // Less than a work day in, a pace says nothing yet.
+    if (p.elapsed < 1) return "Too early for a forecast: " + money(actual) + " so far, less than a work day into the " + unit + "."
     var diff = p.projected - target
     return "At your current pace you'll end the " + unit + " at " + money(p.projected) + ", "
          + (diff >= 0 ? money(diff) + " above" : money(-diff) + " short of") + " the target."
@@ -74,7 +79,7 @@ Column {
   }
 
   function behind(p, actual, target) {
-    return target > 0 && !p.done && p.elapsed > 0 && actual < target && p.projected < target
+    return target > 0 && !p.done && p.elapsed >= 1 && actual < target && p.projected < target
   }
 
   spacing: Style.spacing.lg
@@ -300,14 +305,14 @@ Column {
     }
 
     Repeater {
-      model: view.db.customers.slice().sort(function(a, b) { return a.name.localeCompare(b.name) })
+      model: view.db.customers
 
       delegate: Column {
         id: cust
         required property var modelData
         readonly property var projects: view.db.projects.filter(function(p) {
           return p.customerId === cust.modelData.id && (!p.archived || view.mTotals.byProject[p.id])
-        }).sort(function(a, b) { return a.name.localeCompare(b.name) })
+        })
         readonly property var ct: view.mTotals.byCustomer[modelData.id] || { minutes: 0, income: 0 }
         visible: projects.length > 0 && (!modelData.archived || ct.minutes > 0)
         width: view.width

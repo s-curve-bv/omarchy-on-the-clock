@@ -37,24 +37,57 @@ Column {
   }
   readonly property int rateColW: Math.max(Style.space(160), Math.ceil(widestRate) + Style.space(24))
   readonly property int ratePickerW: Math.max(pickerW, Math.ceil(widestRate) + Style.space(56))
-  readonly property int budgetColW: width - indent - nameColW - rateColW - Style.space(40)
+  readonly property int budgetColW: width - indent - nameColW - rateColW - Style.space(110)
   readonly property int editLabelW: Style.space(80)
   readonly property int indent: Style.space(24)
   property string editingProject: ""
   property string editingCustomer: ""
   property bool showArchived: false
 
-  function byName(a, b) { return String(a.name).localeCompare(String(b.name)) }
-
+  // Customers and projects show in their own order, archived ones last;
+  // you move them with ↑ ↓ or by dragging. New ones are added at the end.
   readonly property var shownCustomers: db.customers
     .filter(function(c) { return view.showArchived || !c.archived })
-    .sort(function(a, b) { return (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || view.byName(a, b) })
+    .sort(function(a, b) { return (a.archived ? 1 : 0) - (b.archived ? 1 : 0) })
 
   function projectsOf(customerId) {
     return db.projects
       .filter(function(p) { return p.customerId === customerId && (view.showArchived || !p.archived) })
-      .sort(function(a, b) { return (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || view.byName(a, b) })
+      .sort(function(a, b) { return (a.archived ? 1 : 0) - (b.archived ? 1 : 0) })
   }
+
+  // Moves item `id` to where `targetId` is in `shown` (the list as on
+  // screen): after it when moving down, before it when moving up. Closes
+  // any editor, since its row may move.
+  function moveTo(list, shown, id, targetId) {
+    var from = -1, to = -1
+    for (var i = 0; i < shown.length; i++) {
+      if (shown[i].id === id) from = i
+      if (shown[i].id === targetId) to = i
+    }
+    // Archived items stay last: they only move among themselves.
+    if (from === -1 || to === -1 || from === to || !shown[from].archived !== !shown[to].archived) return
+    editingCustomer = ""
+    editingProject = ""
+    service.moveItem(list, id, targetId, to > from)
+  }
+
+  function neighbour(shown, id, step) {
+    for (var i = 0; i < shown.length; i++) {
+      var n = shown[i].id === id ? shown[i + step] : null
+      if (n && !n.archived === !shown[i].archived) return n
+    }
+    return null
+  }
+  function canMove(shown, id, step) { return !!neighbour(shown, id, step) }
+  function moveBy(list, shown, id, step) {
+    var n = neighbour(shown, id, step)
+    if (n) moveTo(list, shown, id, n.id)
+  }
+
+  // Dragging a row: what is dragged and the row it would take the place of.
+  property string dragId: ""
+  property string dropId: ""
 
   readonly property int archivedCount: db.customers.filter(function(c) { return c.archived }).length
     + db.projects.filter(function(p) {
@@ -114,13 +147,21 @@ Column {
   // Text field fed by `value` instead of a binding on `text`, so a save
   // elsewhere (a dropdown, another row) never overwrites what you are typing.
   // Commits on Enter, on leaving the field, and shortly after you stop typing.
+  // `owner` is the id of the item a row edits: when the row comes to show
+  // another item while you type, what you typed is dropped instead of being
+  // saved on that other item.
   component Field: TextField {
     id: field
     property string value: ""
+    property string owner: ""
+    property string typedFor: ""
     signal commit(string text)
 
     function flush() {
       pending.stop()
+      var mine = typedFor === owner
+      typedFor = ""
+      if (!mine) { text = value; return }
       if (text !== value) commit(text)
     }
 
@@ -131,7 +172,7 @@ Column {
     Component.onCompleted: text = value
     onValueChanged: if (!activeFocus) text = value
     onActiveFocusChanged: if (!activeFocus) { flush(); text = value }
-    onTextEdited: pending.restart()
+    onTextEdited: { typedFor = owner; pending.restart() }
     onEditingFinished: flush()
   }
 
@@ -157,6 +198,82 @@ Column {
     color: view.panel.dim
     font.family: view.panel.font
     font.pixelSize: Style.font.body
+  }
+
+  // ↑ ↓ on a hovered row, left of the edit hint.
+  component MoveButtons: Row {
+    id: moves
+    property bool canUp: true
+    property bool canDown: true
+    signal up()
+    signal down()
+    anchors.right: parent.right
+    anchors.rightMargin: Style.space(40)
+    anchors.verticalCenter: parent.verticalCenter
+    spacing: Style.spacing.xs
+    Repeater {
+      model: [{ glyph: "↑", up: true }, { glyph: "↓", up: false }]
+      Text {
+        id: arrow
+        required property var modelData
+        readonly property bool enabledHere: modelData.up ? moves.canUp : moves.canDown
+        text: modelData.glyph
+        width: Style.space(22)
+        horizontalAlignment: Text.AlignHCenter
+        color: arrowMouse.containsMouse && enabledHere ? view.panel.fg : view.panel.dim
+        opacity: enabledHere ? 1 : 0.3
+        font.family: view.panel.font
+        font.pixelSize: Style.font.body
+        MouseArea {
+          id: arrowMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: arrow.enabledHere ? Qt.PointingHandCursor : Qt.ArrowCursor
+          onClicked: if (arrow.enabledHere) { if (arrow.modelData.up) moves.up(); else moves.down() }
+        }
+      }
+    }
+  }
+
+  // A row you click to edit and drag to move. `rows` is the Repeater of
+  // the rows it can move between, `shown` their items, `list` the data list.
+  component RowMouse: MouseArea {
+    id: rm
+    property string itemId: ""
+    property string list: ""
+    property var shown: []
+    property Repeater rows: null
+    property real pressY: 0
+    property bool dragging: false
+    signal edit()
+
+    anchors.fill: parent
+    hoverEnabled: true
+    preventStealing: true
+    cursorShape: dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+
+    function rowAt(y) {
+      for (var i = 0; i < rows.count; i++) {
+        var r = rows.itemAt(i)
+        var top = r.mapToItem(rm, 0, 0).y
+        if (y >= top && y < top + r.height) return shown[i] ? shown[i].id : ""
+      }
+      return ""
+    }
+
+    onPressed: function(mouse) { pressY = mouse.y; dragging = false }
+    onPositionChanged: function(mouse) {
+      if (!pressed) return
+      if (!dragging && Math.abs(mouse.y - pressY) > Style.space(6)) { dragging = true; view.dragId = itemId }
+      if (dragging) view.dropId = rowAt(mouse.y)
+    }
+    onReleased: {
+      if (dragging && view.dropId) view.moveTo(list, shown, itemId, view.dropId)
+      view.dragId = ""
+      view.dropId = ""
+    }
+    onCanceled: { dragging = false; view.dragId = ""; view.dropId = "" }
+    onClicked: { if (!dragging) edit(); dragging = false }
   }
 
   // Outline around an open editor; children stack in a padded column.
@@ -321,6 +438,7 @@ Column {
 
         Field {
           width: Style.space(320)
+          owner: rrow.rate.id || ""
           value: rrow.rate.name || ""
           placeholderText: "Name"
           maximumLength: view.rateNameMax
@@ -328,6 +446,7 @@ Column {
         }
         Field {
           width: Style.space(110)
+          owner: rrow.rate.id || ""
           value: String(rrow.rate.amount || "")
           placeholderText: "per hour"
           validator: DoubleValidator { bottom: 0 }
@@ -369,6 +488,7 @@ Column {
     }
 
     Repeater {
+      id: customerRows
       model: view.shownCustomers.length
 
       delegate: Column {
@@ -387,7 +507,9 @@ Column {
           width: parent.width
           height: view.lineH
           radius: Style.cornerRadius
-          color: customerMouse.containsMouse ? Style.hoverFill : "transparent"
+          color: view.dropId === cblock.customer.id && view.dragId !== cblock.customer.id ? Qt.rgba(view.panel.accent.r, view.panel.accent.g, view.panel.accent.b, 0.25)
+               : customerMouse.containsMouse ? Style.hoverFill : "transparent"
+          opacity: view.dragId === cblock.customer.id ? 0.5 : 1
 
           Text {
             x: Style.spacing.sm
@@ -400,14 +522,23 @@ Column {
             font.pixelSize: Style.font.body
             font.bold: true
           }
-          EditHint { visible: customerMouse.containsMouse }
+          EditHint { visible: customerMouse.containsMouse && !view.dragId }
 
-          MouseArea {
+          RowMouse {
             id: customerMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: { view.editingProject = ""; view.editingCustomer = cblock.customer.id }
+            itemId: cblock.customer.id || ""
+            list: "customers"
+            shown: view.shownCustomers
+            rows: customerRows
+            onEdit: { view.editingProject = ""; view.editingCustomer = cblock.customer.id }
+
+            MoveButtons {
+              visible: customerMouse.containsMouse && !view.dragId
+              canUp: view.canMove(view.shownCustomers, cblock.customer.id, -1)
+              canDown: view.canMove(view.shownCustomers, cblock.customer.id, 1)
+              onUp: view.moveBy("customers", view.shownCustomers, cblock.customer.id, -1)
+              onDown: view.moveBy("customers", view.shownCustomers, cblock.customer.id, 1)
+            }
           }
         }
 
@@ -425,6 +556,7 @@ Column {
               Label { text: "Customer"; width: view.editLabelW }
               Field {
                 width: Style.space(320)
+                owner: cblock.customer.id || ""
                 value: cblock.customer.name || ""
                 placeholderText: "Customer name"
                 onCommit: view.service.updateItem("customers", cblock.customer.id, { name: text })
@@ -449,6 +581,7 @@ Column {
         }
 
         Repeater {
+          id: projectRows
           model: cblock.projects.length
 
           delegate: Item {
@@ -464,8 +597,9 @@ Column {
               visible: !prow.editing
               anchors.fill: parent
               radius: Style.cornerRadius
-              color: lineMouse.containsMouse ? Style.hoverFill : "transparent"
-              opacity: prow.project.archived ? 0.55 : 1
+              color: view.dropId === prow.project.id && view.dragId !== prow.project.id ? Qt.rgba(view.panel.accent.r, view.panel.accent.g, view.panel.accent.b, 0.25)
+                   : lineMouse.containsMouse ? Style.hoverFill : "transparent"
+              opacity: (prow.project.archived ? 0.55 : 1) * (view.dragId === prow.project.id ? 0.5 : 1)
 
               Row {
                 anchors.verticalCenter: parent.verticalCenter
@@ -499,14 +633,23 @@ Column {
                 }
               }
 
-              EditHint { visible: lineMouse.containsMouse }
+              EditHint { visible: lineMouse.containsMouse && !view.dragId }
 
-              MouseArea {
+              RowMouse {
                 id: lineMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: { view.editingCustomer = ""; view.editingProject = prow.project.id }
+                itemId: prow.project.id || ""
+                list: "projects"
+                shown: cblock.projects
+                rows: projectRows
+                onEdit: { view.editingCustomer = ""; view.editingProject = prow.project.id }
+
+                MoveButtons {
+                  visible: lineMouse.containsMouse && !view.dragId
+                  canUp: view.canMove(cblock.projects, prow.project.id, -1)
+                  canDown: view.canMove(cblock.projects, prow.project.id, 1)
+                  onUp: view.moveBy("projects", cblock.projects, prow.project.id, -1)
+                  onDown: view.moveBy("projects", cblock.projects, prow.project.id, 1)
+                }
               }
             }
 
@@ -522,6 +665,7 @@ Column {
                 Label { text: "Name"; width: view.editLabelW }
                 Field {
                   width: editor.innerWidth - view.editLabelW - view.ratePickerW - Style.space(50) - 3 * Style.spacing.md
+                  owner: prow.project.id || ""
                   value: prow.project.name || ""
                   placeholderText: "Project name"
                   onCommit: view.service.updateItem("projects", prow.project.id, { name: text })
@@ -549,6 +693,7 @@ Column {
                 Field {
                   visible: (prow.project.budgetType || "none") !== "none"
                   width: Style.space(110)
+                  owner: prow.project.id || ""
                   value: String(prow.project.budget || "")
                   placeholderText: prow.project.budgetType === "hours" ? "hours" : "amount"
                   validator: DoubleValidator { bottom: 0 }
@@ -644,6 +789,56 @@ Column {
     spacing: Style.spacing.md
 
     PanelSectionHeader { text: "SETTINGS"; foreground: view.panel.fg; fontFamily: view.panel.font }
+
+    // Work days count for the forecast and for which meetings Week asks
+    // about; calls only count within work hours.
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Work days"; width: view.labelW }
+      Row {
+        spacing: Style.spacing.sm
+        Repeater {
+          model: 7
+          Button {
+            id: dayChip
+            required property int index
+            readonly property int dow: index + 1   // 1 = Monday .. 7 = Sunday
+            readonly property var days: view.db.settings.workDays || [1, 2, 3, 4, 5]
+            text: Qt.locale().standaloneDayName(dow % 7, Locale.ShortFormat)
+            fontFamily: view.panel.font
+            bordered: true
+            selected: days.indexOf(dow) !== -1
+            onClicked: {
+              var next = days.filter(function(d) { return d !== dayChip.dow })
+              if (!selected) next.push(dow)
+              // At least one work day, or nothing adds up.
+              if (next.length) view.service.setSetting("workDays", next.sort())
+            }
+          }
+        }
+      }
+    }
+
+    Row {
+      spacing: Style.spacing.lg
+      Label { text: "Work hours"; width: view.labelW }
+      Field {
+        width: Style.space(70)
+        value: view.db.settings.workStart || ""
+        placeholderText: "09:00"
+        validator: RegularExpressionValidator { regularExpression: /^\d{0,2}(:\d{0,2})?$/ }
+        onCommit: view.service.setSetting("workStart", text.trim())
+      }
+      Label { text: "to" }
+      Field {
+        width: Style.space(70)
+        value: view.db.settings.workEnd || ""
+        placeholderText: "18:00"
+        validator: RegularExpressionValidator { regularExpression: /^\d{0,2}(:\d{0,2})?$/ }
+        onCommit: view.service.setSetting("workEnd", text.trim())
+      }
+      Label { text: "calls outside these hours aren't booked" }
+    }
 
     Row {
       spacing: Style.spacing.lg

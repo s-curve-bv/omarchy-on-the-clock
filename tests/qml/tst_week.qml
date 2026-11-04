@@ -195,4 +195,27 @@ TestCase {
     compare(saved().notes[today()].p2, ["Half a thought"])
     compare(fakePanel.focusGridCalls, 1)
   }
+
+  function noteLines(item, out) {
+    out = out || []
+    for (const c of item.children) {
+      if (c.value !== undefined && c.pending !== undefined) out.push(c)
+      noteLines(c, out)
+    }
+    return out
+  }
+
+  function test_emptyingALineKeepsTheKeyboard() {
+    service.addNote(today(), "p2", "Standup")
+    const line = noteLines(week)[0]
+    verify(line)
+    line.forceActiveFocus()
+    line.selectAll()
+    keyClick(Qt.Key_Backspace)
+    wait(1000)  // past the save while typing
+    compare(saved().notes[today()].p2, ["Standup"])
+    verify(line.activeFocus)
+    keyClick(Qt.Key_Escape)
+    compare(fakePanel.focusGridCalls, 1)
+  }
 }

@@ -43,12 +43,11 @@ Item {
   readonly property var pendingIdle: timer && timer.pendingIdle ? timer.pendingIdle : null
 
   // The project the bar offers to start: the last one used, or the first.
-  readonly property var activeProjects: db.projects
+  readonly property var activeProjects: Model.orderedProjects(db)
     .filter(function(p) {
       var c = Model.byId(db.customers, p.customerId)
       return !p.archived && !(c && c.archived)
     })
-    .sort(function(a, b) { return root.projectLabel(a).localeCompare(root.projectLabel(b)) })
   readonly property var selectedProject: {
     var p = Model.byId(db.projects, db.settings.lastProjectId)
     return p && activeProjects.indexOf(p) !== -1 ? p : (activeProjects[0] || null)
@@ -128,7 +127,7 @@ Item {
   // After a timer stops with time booked, the panel asks what was done and
   // offers the meetings from that stretch. Not saved: a restart drops it.
   property var notePrompt: null   // { day, projectId, minutes, from, to }
-  readonly property var notePromptMeetings: notePrompt ? Model.meetingsDuring(events, notePrompt.from, notePrompt.to) : []
+  readonly property var notePromptMeetings: notePrompt ? Model.meetingsDuring(events, notePrompt.from, notePrompt.to, db) : []
 
   function askNote(project, startedAt, minutes) {
     if (!project || minutes <= 0) return
@@ -266,7 +265,8 @@ Item {
   // On Air reports camera, microphone and screen-share sessions through its
   // hook (hooks/on-the-clock.sh calls onAir over IPC), with their real start
   // and end times. Overlapping camera and microphone sessions make one call;
-  // screen sharing alone isn't one. Events may arrive twice: each session is
+  // screen sharing alone isn't one. Only calls starting within work hours
+  // count. Events may arrive twice: each session is
   // known by sensor, app and start, and handled once.
   property var sessions: ({})   // "sensor|app|start" -> { start, end, done } in ms; not saved
   // The timer was started by the call going on, so its end stops it.
@@ -281,6 +281,9 @@ Item {
     var start = Number(startSec) * 1000
     var end = Number(endSec) * 1000
     if (!(start > 0) || (event === "stop" && !(end > 0)) || (event !== "start" && event !== "stop")) return "bad event"
+    // Calls in the evening or the weekend aren't work: a call counts when
+    // it starts on a work day, within work hours.
+    if (!Model.isWorkTime(start, db.settings)) return "outside work hours"
     var key = sensor + "|" + app + "|" + startSec
     var known = sessions[key]
     if (known && (known.done || event === "start" || known.end)) return "known"
@@ -332,7 +335,7 @@ Item {
     if (timer && timer.call) {
       callStartedTimer = false
       var p = timerProject
-      var m = Model.meetingsDuring(events, from, to)[0]
+      var m = Model.meetingsDuring(events, from, to, db)[0]
       var booked = 0
       mutate(function(d) {
         var day = Model.dateKey(new Date(d.timer.startedAt))
@@ -391,16 +394,26 @@ Item {
     startTimer(pid, db.settings.meetingTimerFrom === "now" ? Date.now() : Math.min(m.start, Date.now()), mark)
   }
 
+  // `projectId` links the series, "ignore" marks it as not work (lunch, a
+  // block in the calendar), "" leaves it unlinked.
   function linkSeries(seriesId, projectId) {
     mutate(function(d) {
-      if (projectId) d.calendar.links[seriesId] = projectId
-      else delete d.calendar.links[seriesId]
+      delete d.calendar.links[seriesId]
+      delete d.calendar.ignored[seriesId]
+      if (projectId === "ignore") d.calendar.ignored[seriesId] = true
+      else if (projectId) d.calendar.links[seriesId] = projectId
     })
   }
 
   // ---- Admin ----
   function addItem(list, item) {
     mutate(function(d) { d[list].push(item) })
+  }
+
+  // Moves a customer or project to just before `targetId` (after it with
+  // `after`): the order Admin, Week and Overview show them in.
+  function moveItem(list, id, targetId, after) {
+    mutate(function(d) { Model.moveItem(d, list, id, targetId, after) })
   }
 
   function updateItem(list, id, fields) {
@@ -618,7 +631,7 @@ Item {
         inCall: root.openSessions().length > 0,
         selectedProjectId: root.selectedProject ? root.selectedProject.id : null,
         entriesToday: root.db.entries[root.today] || {}, notesToday: root.db.notes[root.today] || {},
-        links: root.db.calendar.links,
+        links: root.db.calendar.links, ignored: root.db.calendar.ignored,
         suggestions: root.suggestions.map(function(m) { return { uid: m.uid, projectId: m.projectId } }),
         currentMeetings: root.currentMeetings.map(function(m) { return { uid: m.uid, projectId: m.projectId } })
       })
