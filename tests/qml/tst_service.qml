@@ -14,7 +14,13 @@ TestCase {
   readonly property string demoPath: "/home/test/.cache/on-the-clock-demo/hours.json"
   readonly property string calendarPath: "/home/test/.cache/blacksheep.calendar/events.json"
 
-  Component { id: serviceComponent; Plugin.Service {} }
+  // The shell's plugin API, as far as Service uses it.
+  QtObject {
+    id: shellApi
+    property var summoned: []
+    function summon(id, payload) { summoned = summoned.concat([id]); return true }
+  }
+  Component { id: serviceComponent; Plugin.Service { shell: shellApi } }
 
   function sample(extra) {
     const d = {
@@ -43,7 +49,7 @@ TestCase {
   function saved(path) { return JSON.parse(Fs.read(path || dataPath)) }
   function today() { return Qt.formatDate(new Date(), "yyyy-MM-dd") }
 
-  function init() { Fs.reset() }
+  function init() { Fs.reset(); shellApi.summoned = [] }
 
   function test_savesChanges() {
     const s = start(sample())
@@ -136,7 +142,7 @@ TestCase {
     compare(saved().timer, null)
     verify(s.notePrompt, "no prompt after stopping")
     compare(s.notePrompt.minutes, 45)
-    verify(Fs.ran("summon s-curve.on-the-clock"), "panel was not opened")
+    compare(shellApi.summoned, ["s-curve.on-the-clock"], "panel was not opened")
   }
 
   function test_shortTimerBooksNothingAndDoesNotAsk() {

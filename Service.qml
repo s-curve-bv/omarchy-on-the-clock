@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import qs.Commons
 import "Model.js" as Model
 import "Demo.js" as Demo
 
@@ -129,10 +130,17 @@ Item {
   property var notePrompt: null   // { day, projectId, minutes, from, to }
   readonly property var notePromptMeetings: notePrompt ? Model.meetingsDuring(events, notePrompt.from, notePrompt.to, db) : []
 
+  // Opens the panel through the shell's plugin API; outside the shell
+  // (no shell given) through omarchy-shell.
+  function openPanel() {
+    if (shell && typeof shell.summon === "function") shell.summon("s-curve.on-the-clock", "{}")
+    else Quickshell.execDetached(["omarchy-shell", "shell", "summon", "s-curve.on-the-clock", "{}"])
+  }
+
   function askNote(project, startedAt, minutes) {
     if (!project || minutes <= 0) return
     notePrompt = { day: Model.dateKey(new Date(startedAt)), projectId: project.id, minutes: minutes, from: startedAt, to: Date.now() }
-    Quickshell.execDetached(["omarchy-shell", "shell", "summon", "s-curve.on-the-clock", "{}"])
+    openPanel()
   }
 
   // "Yes, that meeting is what I did": add it as a line, and mark that
@@ -360,7 +368,7 @@ Item {
     }
     callPrompt = c
     notify("You were in " + what + " for " + length, "Open On the Clock to book it")
-    Quickshell.execDetached(["omarchy-shell", "shell", "summon", "s-curve.on-the-clock", "{}"])
+    openPanel()
   }
 
   // Book a call on `projectId`, with `line` as its note.
@@ -591,7 +599,9 @@ Item {
   Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.dataDir, root.demoDir])
 
   // omarchy-shell ontheclock toggle | start <project> | stop | status | backup | demo [on|off] | state
-  IpcHandler {
+  // ShellIpc: omarchy-shell reaches it over the shell's own socket, and
+  // qs ipc still does too.
+  ShellIpc {
     target: "ontheclock"
 
     function toggle(): string {
