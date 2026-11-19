@@ -11,6 +11,8 @@ QtObject {
   property bool printErrors: true
   property bool atomicWrites: false
   property bool blockWrites: false
+  property bool blockLoading: false
+  property bool blockAllReads: false
   property bool preload: true
   property string loadedText: ""
 

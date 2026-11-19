@@ -9,6 +9,11 @@ QtObject {
   property var stdout: null
   property var stderr: null
   property var environment: ({})
+  property bool stdinEnabled: false
+  property string workingDirectory: ""
+
+  function write(data) {}
+  function signal(sig) { running = false }
 
   signal started()
   signal exited(int exitCode, int exitStatus)
