@@ -110,8 +110,8 @@ else you type becomes a line in that day's notes.
 | space | Week: start or stop the selected project's timer |
 | Esc | close the panel |
 
-With the mouse: click a cell for +0:15, right-click for −0:15, shift-click
-for ±1:00.
+Clicking a cell selects it, for example to read its notes; it doesn't change
+the hours.
 
 ### Idle check
 

@@ -4,9 +4,8 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Projects x days of one week. Click a cell for +0:15, right-click for
-// -0:15, shift-click for +1:00; scrolling scrolls the panel, it never
-// changes hours. On top, the calendar
+// Projects x days of one week. Clicking a cell only selects it (to read
+// its note); hours change with the keys. On top, the calendar
 // meeting going on now, and the ones of the last work days to decide on.
 Column {
   id: view
@@ -353,13 +352,11 @@ Column {
                 id: cellMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: function(mouse) {
+                onClicked: {
                   view.cursorId = row.project.id
                   view.cursorDay = cell.modelData
-                  var step = (mouse.modifiers & Qt.ShiftModifier) ? 60 : 15
-                  view.service.addMinutes(cell.modelData, row.project.id, mouse.button === Qt.RightButton ? -step : step)
+                  view.panel.focusGrid()
                 }
               }
             }
@@ -523,7 +520,7 @@ Column {
 
   Text {
     text: "↑↓ project · ←→ day · + − 0:15 (shift 1:00) · enter bar project · n note · space " + (view.isCurrentWeek ? "timer" : "back to this week")
-        + " · or click +0:15, right-click −0:15"
+        + " · click a cell to select it"
     color: view.panel.faint
     font.family: view.panel.font
     font.pixelSize: Style.font.caption
