@@ -45,6 +45,8 @@ with a few customers, a handful of projects and a couple of hourly rates.
 
     omarchy plugin add https://github.com/s-curve-bv/omarchy-on-the-clock.git --enable
 
+It needs Omarchy 4.5 or later.
+
 The bar shows the project you worked on last with a ▶ button; click it to
 start the timer, and ■ to stop it and book the time. While it runs, the bar
 shows the elapsed time. Click the project name to open the panel.
