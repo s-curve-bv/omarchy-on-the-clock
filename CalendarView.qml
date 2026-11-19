@@ -194,7 +194,7 @@ Column {
           }
         }
 
-        Dropdown {
+        PickList {
           id: picker
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter

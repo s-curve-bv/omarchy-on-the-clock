@@ -65,7 +65,7 @@ Rectangle {
       font.bold: true
     }
 
-    Dropdown {
+    PickList {
       id: picker
       width: Math.min(content.width, Style.space(420))
       showLabel: false

@@ -74,7 +74,7 @@ Item {
       font.family: row.panel.font
       font.pixelSize: Style.font.bodySmall
     }
-    Dropdown {
+    PickList {
       id: picker
       visible: !row.meeting.linked && row.decided === ""
       width: {

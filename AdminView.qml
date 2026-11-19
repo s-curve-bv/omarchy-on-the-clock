@@ -176,7 +176,7 @@ Column {
     onEditingFinished: flush()
   }
 
-  component Picker: Dropdown {
+  component Picker: PickList {
     id: picker
     showLabel: false
     fontFamily: view.panel.font
