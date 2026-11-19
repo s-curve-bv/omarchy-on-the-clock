@@ -324,6 +324,7 @@ Item {
     var m = linked[0]
     startTimer(m.projectId, Math.min(from, Date.now()), function(d) {
       d.timer.call = true
+      if (m.seriesId) d.timer.seriesId = m.seriesId
       d.calendar.decided[m.uid] = "confirmed"
     })
     callStartedTimer = true
@@ -364,7 +365,7 @@ Item {
 
   // Book a call on `projectId`, with `line` as its note.
   function bookCall(c, projectId, line) {
-    if (!Model.byId(db.projects, projectId)) return
+    if (!c || !Model.byId(db.projects, projectId)) return
     mutate(function(d) {
       Model.addMinutes(d, c.day, projectId, c.minutes)
       if (String(line || "").trim()) Model.addNote(d, c.day, projectId, line)
@@ -389,19 +390,25 @@ Item {
   function startMeeting(m, projectId) {
     var pid = projectId || m.projectId
     if (!Model.byId(db.projects, pid)) return
-    var mark = function(d) { d.calendar.decided[m.uid] = "timer" }
+    var mark = function(d) {
+      d.calendar.decided[m.uid] = "timer"
+      if (m.seriesId && d.timer && d.timer.projectId === pid) d.timer.seriesId = m.seriesId
+    }
     if (timer && timer.projectId === pid) { mutate(mark); return }
     startTimer(pid, db.settings.meetingTimerFrom === "now" ? Date.now() : Math.min(m.start, Date.now()), mark)
   }
 
   // `projectId` links the series, "ignore" marks it as not work (lunch, a
-  // block in the calendar), "" leaves it unlinked.
+  // block in the calendar), "" leaves it unlinked. A timer running for one
+  // of its meetings moves to the newly linked project.
   function linkSeries(seriesId, projectId) {
     mutate(function(d) {
       delete d.calendar.links[seriesId]
       delete d.calendar.ignored[seriesId]
       if (projectId === "ignore") d.calendar.ignored[seriesId] = true
       else if (projectId) d.calendar.links[seriesId] = projectId
+      if (d.timer && d.timer.seriesId === seriesId && Model.byId(d.projects, projectId))
+        d.timer.projectId = projectId
     })
   }
 

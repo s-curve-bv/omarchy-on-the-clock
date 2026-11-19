@@ -11,7 +11,8 @@
 //   targets:   { month, year }                      income, excl. VAT; with a year
 //                                                   target, months are derived from it
 //   timer:     null | { projectId, startedAt, idleFrom, pendingIdle: {from, to},
-//                       call }                       call: started by a call, which stops it
+//                       call, seriesId }             call: started by a call, which stops it;
+//                                                   seriesId: the recurring meeting it times
 //   calendar:  { links: { seriesId: projectId }, ignored: { seriesId: true },   not work
 //                decided: { uid: "confirmed" | "dismissed" | "timer" } }   timer: the timer covered it
 //   settings:  { currency, idleMinutes, workDays: [1..5], calendarCache,
@@ -526,6 +527,7 @@ function meetingRow(data, e, fallbackId) {
     uid: e.uid, title: e.title || "(no title)", start: start, end: Date.parse(e.end),
     dateKey: dateKey(new Date(start)), minutes: eventMinutes(e),
     projectId: meetingProject(data, e, fallbackId),
+    seriesId: e.seriesId || "",
     linked: !!(e.seriesId && data.calendar.links[e.seriesId]),
     decided: data.calendar.decided[e.uid] || ""
   }

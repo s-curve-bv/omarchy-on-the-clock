@@ -307,6 +307,25 @@ TestCase {
     compare(s.notePrompt, null, "no 'what did you do?' for a call")
   }
 
+  // Linking the meeting to another project while its call is going on
+  // moves the timer: the call is booked, with its note, on that project.
+  function test_relinkingDuringACallMovesItsTimer() {
+    const ev = meeting("m1", "Dev planning", -30, 30)
+    ev.recurring = true; ev.seriesId = "s1"
+    Fs.write(calendarPath, JSON.stringify({ events: [ev] }))
+    const s = start(withNext({ calendar: { links: { s1: "p1" }, decided: {} } }))
+    tryVerify(() => s.calendarAvailable)
+    const t0 = Date.now() - 28 * 60000
+    s.onAirEvent("start", "camera", "LibreWolf", sec(t0), "")
+    compare(saved().timer.projectId, "p1")
+    s.linkSeries("s1", "p3")
+    compare(saved().timer.projectId, "p3")
+    s.onAirEvent("stop", "camera", "LibreWolf", sec(t0), sec(Date.now()))
+    const day = Qt.formatDate(new Date(t0), "yyyy-MM-dd")
+    compare(saved().entries[day], { p3: 30 })
+    compare(Object.keys(saved().notes[day]), ["p3"])
+  }
+
   function test_aRunningTimerIsLeftAlone() {
     const s = start(withNext({ timer: { projectId: "p1", startedAt: Date.now() - 60 * 60000 } }))
     const t0 = Date.now() - 30 * 60000
